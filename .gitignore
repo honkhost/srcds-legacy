@@ -117,3 +117,4 @@ node_modules/
 
 # sekrits
 secret.hjson
+set_env.sh
