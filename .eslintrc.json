@@ -1,0 +1,36 @@
+{
+  "env": {
+      "commonjs": true,
+      "es6": true,
+      "node": true
+  },
+  "plugins": [
+      "node",
+      "promise",
+      "prettier",
+      "security"
+  ],
+  "extends" : [
+      "eslint:recommended",
+      "plugin:node/recommended",
+      "plugin:promise/recommended",
+      "plugin:prettier/recommended",
+      "plugin:security/recommended"
+  ],
+  "globals": {
+      "Atomics": "readonly",
+      "SharedArrayBuffer": "readonly"
+  },
+  "parserOptions": {
+      "ecmaVersion": 2020
+  },
+  "rules": {
+      "capitalized-comments": ["error", "always", {
+          "ignorePattern": "prettier-ignore"
+      }],
+      "arrow-parens": ["error", "always"],
+      "prefer-arrow-callback": ["error"],
+      "arrow-body-style": ["error", "always"],
+      "shebang": ["off"]
+  }
+}
