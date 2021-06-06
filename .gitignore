@@ -113,8 +113,3 @@ yarn-error.log*
 
 # Dependency directories
 node_modules/
-
-
-# sekrits
-secret.hjson
-set_env.sh

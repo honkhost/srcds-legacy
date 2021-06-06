@@ -18,5 +18,8 @@
   "bugs": {
     "url": "https://github.com/epers/srcds_runner/issues"
   },
-  "homepage": "https://github.com/epers/srcds_runner#readme"
+  "homepage": "https://github.com/epers/srcds_runner#readme",
+  "dependencies": {
+    "dotenv": "^10.0.0"
+  }
 }
