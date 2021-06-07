@@ -33,24 +33,8 @@ const config = {
 console.log(config);
 // Sub to redis update channel
 
-// Build directories
-const lowerDir = path.join(config.basedir, 'basefiles', config.gameid);
-const upperDir = path.join(config.basedir, 'serverfiles', config.ident, 'persistent');
-const workDir = path.join(config.basedir, 'serverfiles', config.ident, '.work');
-const mountPoint = path.join(config.basedir, 'serverfiles', config.ident, '740');
-
-// Create overlayfs mounts
-const overlayMountCommandLine = `mount -t overlay ${config.ident} -o \
-lowerdir=${lowerDir},\
-upperdir=${upperDir},\
-workdir=${workDir} \
-${mountPoint}
-`;
-
-console.log(overlayMountCommandLine);
-
 // Start srcds
-const gameDir = path.join(config.basedir, 'serverfiles', config.ident, config.gameid);
+const gameDir = path.normalize('/home/steam/srcds');
 
 const srcdsCommandLine = `${gameDir}/srcds_run \
 -game ${config.game} \

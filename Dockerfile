@@ -13,7 +13,7 @@ ENV STEAMCMDDIR="${HOMEDIR}/steamcmd"
 
 ENV NODE_ENV=production
 
-ENV SRCDS_BASEDIR='${HOMEDIR}/srcds'
+ENV SRCDS_BASEDIR='/opt/srcds'
 ENV SRCDS_GAMEID='740'
 ENV SRCDS_GAME="csgo"
 
@@ -66,12 +66,10 @@ RUN set -x \
   && apt-get -yq autoremove \
   && rm -rf /var/lib/apt/lists/*
 
-USER ${USER}
+COPY app/ ${HOMEDIR}/app
 
-COPY app ${HOMEDIR}/app
-
-WORKDIR ${HOMEDIR}
-CMD ["node", "app/srcds_runner.mjs"]
+WORKDIR ${HOMEDIR}/app
+ENTRYPOINT ["node", "srcds_runner.mjs"]
 
 EXPOSE  27015/tcp \
         27015/udp \

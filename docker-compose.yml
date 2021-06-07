@@ -5,3 +5,13 @@ services:
     network_mode: host
     env_file:
       - .env
+    volumes:
+      - srcds:/opt/srcds
+
+volumes:
+  srcds:
+    driver: local
+    driver_opts:
+      type: overlay
+      o: lowerdir=/opt/srcds/serverfiles/740,upperdir=/opt/srcds/instances/9f93dc/persistent,workdir=/opt/srcds/instances/9f93dc/.work
+      device: overlay
