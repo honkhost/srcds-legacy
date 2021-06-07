@@ -113,6 +113,3 @@ yarn-error.log*
 
 # Dependency directories
 node_modules/
-
-# docker-compose
-docker-compose.yml

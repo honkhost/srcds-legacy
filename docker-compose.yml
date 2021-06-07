@@ -1,0 +1,7 @@
+version: "3"
+services:
+  srcds_runner:
+    image: srcds_runner:dev01
+    network_mode: host
+    env_file:
+      - .env
