@@ -36,35 +36,35 @@ ENV SRCDS_WSAPIKEY=''
 # Install SteamCMD and nodejs, Create $USER, Create $HOMEDIR
 RUN set -x \
   && export DEBIAN_FRONTEND=noninteractive \
-	&& dpkg --add-architecture i386 \
-	&& apt-get -yq update \
-	&& apt-get -yq install --no-install-recommends --no-install-suggests \
-		lib32stdc++6 \
-		lib32gcc1 \
-		wget \
-		ca-certificates \
-		nano \
-		libsdl2-2.0-0:i386 \
-		curl \
-		locales \
-	&& sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen \
-	&& dpkg-reconfigure --frontend=noninteractive locales \
-	&& useradd -u "${PUID}" -m "${USER}" \
+  && dpkg --add-architecture i386 \
+  && apt-get -yq update \
+  && apt-get -yq install --no-install-recommends --no-install-suggests \
+    lib32stdc++6 \
+    lib32gcc1 \
+    wget \
+    ca-certificates \
+    nano \
+    libsdl2-2.0-0:i386 \
+    curl \
+    locales \
+  && sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen \
+  && dpkg-reconfigure --frontend=noninteractive locales \
+  && useradd -u "${PUID}" -m "${USER}" \
   && su "${USER}" -c \
     "mkdir -p \"${STEAMCMDDIR}\" \
     && wget -qO- 'https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz' | tar xvzf - -C \"${STEAMCMDDIR}\" \
     && \"./${STEAMCMDDIR}/steamcmd.sh\" +quit \
     && mkdir -p \"${HOMEDIR}/.steam/sdk32\" \
     && ln -s \"${STEAMCMDDIR}/linux32/steamclient.so\" \"${HOMEDIR}/.steam/sdk32/steamclient.so\" \
-		&& ln -s \"${STEAMCMDDIR}/linux32/steamcmd\" \"${STEAMCMDDIR}/linux32/steam\" \
-		&& ln -s \"${STEAMCMDDIR}/steamcmd.sh\" \"${STEAMCMDDIR}/steam.sh\"" \
-	&& ln -s "${STEAMCMDDIR}/linux32/steamclient.so" "/usr/lib/i386-linux-gnu/steamclient.so" \
-	&& ln -s "${STEAMCMDDIR}/linux64/steamclient.so" "/usr/lib/x86_64-linux-gnu/steamclient.so" \
+    && ln -s \"${STEAMCMDDIR}/linux32/steamcmd\" \"${STEAMCMDDIR}/linux32/steam\" \
+    && ln -s \"${STEAMCMDDIR}/steamcmd.sh\" \"${STEAMCMDDIR}/steam.sh\"" \
+  && ln -s "${STEAMCMDDIR}/linux32/steamclient.so" "/usr/lib/i386-linux-gnu/steamclient.so" \
+  && ln -s "${STEAMCMDDIR}/linux64/steamclient.so" "/usr/lib/x86_64-linux-gnu/steamclient.so" \
   && curl -fsSL https://deb.nodesource.com/setup_16.x | bash - \
   && apt install -yq nodejs \
-	&& apt-get -yq clean autoclean \
-	&& apt-get -yq autoremove \
-	&& rm -rf /var/lib/apt/lists/*
+  && apt-get -yq clean autoclean \
+  && apt-get -yq autoremove \
+  && rm -rf /var/lib/apt/lists/*
 
 USER ${USER}
 
