@@ -77,6 +77,7 @@ const srcdsChild = child_process.spawn('bash', srcdsCommandLine, {
 
 // Create a telnet server for SRCDS console
 const consoleServer = net.createServer((socket) => {
+  socket.setNoDelay(true);
   socket.pipe(srcdsChild.stdin, { end: false });
   srcdsChild.stdout.pipe(socket, { end: false });
   srcdsChild.stderr.pipe(socket, { end: false });
@@ -104,6 +105,7 @@ consoleServer.on('connection', (socket) => {
 process.on('SIGTERM', () => {
   console.log('SIGTERM received, exiting');
   // Ask SRCDS to exit cleanly
+  srcdsChild.stdin.write(`echo "QUIT command received at ${Date.now()}"\n`);
   srcdsChild.stdin.write('quit\n', 'utf8', () => {
     console.log('"quit" command sent successfully');
     // When the child quits
