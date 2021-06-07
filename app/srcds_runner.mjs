@@ -5,6 +5,7 @@
 
 // Imports
 import { default as path } from 'path';
+import { default as child_process } from 'child_process';
 
 // We're using dotenv for now to load config from .env, but once we're containerized we'll just get them directly
 import { default as dotenv } from 'dotenv';
@@ -34,25 +35,47 @@ console.log(config);
 // Sub to redis update channel
 
 // Start srcds
-const gameDir = path.normalize('/home/steam/srcds');
+const gameDir = path.normalize('/opt/srcds');
 
-const srcdsCommandLine = `${gameDir}/srcds_run \
--game ${config.game} \
--usercon \
--strictportbind \
--ip ${config.ip} \
--port ${config.port} \
-+clientport ${config.clientPort} \
-+tv_port ${config.hltvPort} \
-+sv_setsteamaccount ${config.gslt} \
--tickrate ${config.tickrate} \
-+map ${config.startupMap} \
-+servercfgfile ${config.serverCfgFile} \
--maxplayers_override ${config.maxPlayers} \
-+game_type ${config.gameType} \
-+game_mode ${config.gameMode} \
--authkey ${config.wsapikey} \
--nobreakpad \
-`;
+// eslint-disable-next-line prettier/prettier
+const srcdsCommandLine = [
+  `${gameDir}/srcds_run`,
+  `-game ${config.game}`,
+  `-usercon`,
+  `-ip ${config.ip}`,
+  `-port ${config.port}`,
+  `+clientport ${config.clientPort}`,
+  `+tv_port ${config.hltvPort}`,
+  `+sv_setsteamaccount ${config.gslt}`,
+  `-tickrate ${config.tickrate}`,
+  `+map ${config.startupMap}`,
+  `+servercfgfile ${config.serverCfgFile}`,
+  `-maxplayers_override ${config.maxPlayers}`,
+  `+game_type ${config.gameType}`,
+  `+game_mode ${config.gameMode}`,
+  `-authkey ${config.wsapikey}`,
+  `-nobreakpad`,
+];
 
 console.log(srcdsCommandLine);
+
+const srcdsChild = child_process.spawn('bash', srcdsCommandLine, {
+  cwd: '/opt/srcds',
+  uid: 1000,
+  gid: 1000,
+  env: {
+    HOME: '/home/steam',
+  },
+});
+
+srcdsChild.stdout.on('data', (data) => {
+  console.log('stdout: ' + data);
+});
+
+srcdsChild.stderr.on('data', (data) => {
+  console.log('stderr: ' + data);
+});
+
+srcdsChild.on('close', (code) => {
+  console.log(`Child exited with code ${code}`);
+});
