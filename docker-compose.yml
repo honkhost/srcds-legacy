@@ -2,16 +2,34 @@ version: "3"
 services:
   srcds:
     image: srcds_runner:dev01
-    network_mode: host
-    env_file:
-      - .env
     volumes:
-      - 9f93dc_srcds:/opt/srcds
+      - srcds:/opt/srcds
+    environment:
+      - SRCDS_IDENT=2a83db
+      - SRCDS_GAMEID=740
+      - SRCDS_GAME=csgo
+      - SRCDS_IP=0.0.0.0
+      - SRCDS_PORT=27015
+      - SRCDS_CLIENTPORT=27005
+      - SRCDS_HLTVPORT=27020
+      - SRCDS_TICKRATE=64
+      - SRCDS_STARTUPMAP=de_nuke
+      - SRCDS_SERVERCFGFILE=server.cfg
+      - SRCDS_MAXPLAYERS=12
+      - SRCDS_GAMETYPE=1
+      - SRCDS_GAMEMODE=2
+      - SRCDS_GSLT=
+      - SRCDS_WSAPIKEY=
+    ports:
+      - 27215:27015
+      - 27215:27015/udp
+      - 27220:27020/udp
+      - 27230:28001
 
 volumes:
-  9f93dc_srcds:
+  srcds:
     driver: local
     driver_opts:
       type: overlay
-      o: lowerdir=/opt/srcds/serverfiles/740,upperdir=/opt/srcds/instances/9f93dc/persistent,workdir=/opt/srcds/instances/9f93dc/.work
-      device: 9f93dc
+      o: lowerdir=/opt/srcds/serverfiles/740,upperdir=/opt/srcds/instances/2a83db/persistent_srcds,workdir=/opt/srcds/instances/2a83db/.work_srcds
+      device: 2a83db_srcds

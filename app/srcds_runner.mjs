@@ -73,6 +73,10 @@ const srcdsChild = child_process.spawn('bash', srcdsCommandLine, {
   },
 });
 
+srcdsChild.stdout.pipe(process.stdout, { end: false });
+srcdsChild.stderr.pipe(process.stderr, { end: false });
+process.stdin.pipe(srcdsChild.stdin, { end: false });
+
 // Create a telnet server for SRCDS console
 const consoleServer = net.createServer((socket) => {
   socket.setNoDelay(true);
