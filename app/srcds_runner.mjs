@@ -69,7 +69,7 @@ const srcdsChild = child_process.spawn('bash', srcdsCommandLine, {
   cwd: '/opt/srcds',
   uid: 1000,
   gid: 1000,
-  maxBuffer: 10240,
+  maxBuffer: 1024,
   env: {
     HOME: '/home/steam',
   },
