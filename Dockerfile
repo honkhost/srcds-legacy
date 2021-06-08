@@ -46,6 +46,8 @@ RUN set -x \
   && apt-get -yq autoremove \
   && rm -rf /var/lib/apt/lists/*
 
+USER ${USER}
+
 ENV SRCDS_BASEDIR='/opt/srcds'
 ENV SRCDS_GAMEID='740'
 ENV SRCDS_GAME="csgo"
