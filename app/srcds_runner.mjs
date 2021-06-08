@@ -40,6 +40,7 @@ const config = {
 };
 
 if (debug) clog.debug('Config:', config);
+
 // Sub to redis update channel
 
 // Setup SRCDS command line options
@@ -67,9 +68,6 @@ if (debug) clog.debug('SRCDS Command Line:', srcdsCommandLine);
 // Spawn SRCDS
 const srcdsChild = child_process.spawn('bash', srcdsCommandLine, {
   cwd: '/opt/srcds',
-  uid: 1000,
-  gid: 1000,
-  maxBuffer: 1024,
   env: {
     HOME: '/home/steam',
   },
@@ -84,7 +82,8 @@ const consoleServer = net.createServer((socket) => {
   process.on('SIGINT', () => {
     socket.destroy();
   });
-  srcdsChild.on('close', () => {
+  srcdsChild.on('exit', (code) => {
+    console.log(`SRCDS exited with code ${code}`);
     socket.destroy();
   });
   consoleServer.on('close', () => {
@@ -102,6 +101,7 @@ consoleServer.on('connection', (socket) => {
   console.log(`SRCDS Console connection established from ${socket.remoteAddress}`);
 });
 
+// Handle SIGTERM
 process.on('SIGTERM', () => {
   console.log('SIGTERM received, exiting');
   // Ask SRCDS to exit cleanly
@@ -109,9 +109,13 @@ process.on('SIGTERM', () => {
   srcdsChild.stdin.write('quit\n', 'utf8', () => {
     console.log('"quit" command sent successfully');
     // When the child quits
-    srcdsChild.on('close', (code) => {
+    srcdsChild.on('exit', (code) => {
       console.log(`SRCDS exited with code ${code}`);
       consoleServer.close();
     });
   });
+});
+
+srcdsChild.on('exit', (code) => {
+  console.log(`SRCDS Exited with code ${code}?? (cleanup manually)`);
 });
