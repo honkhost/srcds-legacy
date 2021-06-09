@@ -2,10 +2,16 @@ version: "3"
 services:
   srcds:
     image: srcds_runner:dev01
+    hostname: template
+    mem_limit: 2048m
+    mem_reservation: 1024M
+    cpus: 0.5
+    stdin_open: true
+    tty: true
     volumes:
-      - srcds:/opt/srcds
+      - srcds:/opt/srcds    
     environment:
-      - SRCDS_IDENT=2a83db
+      - SRCDS_IDENT=template
       - SRCDS_GAMEID=740
       - SRCDS_GAME=csgo
       - SRCDS_IP=0.0.0.0
@@ -31,5 +37,5 @@ volumes:
     driver: local
     driver_opts:
       type: overlay
-      o: lowerdir=/opt/srcds/serverfiles/740,upperdir=/opt/srcds/instances/2a83db/persistent_srcds,workdir=/opt/srcds/instances/2a83db/.work_srcds
-      device: 2a83db_srcds
+      o: lowerdir=/opt/srcds/serverfiles/740,upperdir=/opt/srcds/instances/template/persistent_srcds,workdir=/opt/srcds/instances/template/.work_srcds
+      device: template_srcds
