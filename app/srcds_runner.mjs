@@ -1,7 +1,7 @@
 'use strict';
 
-// Daemon
-// Do not run by hand
+// This wraps srcds
+// Managed by daemon.mjs
 
 // Imports
 import { default as path } from 'path';
@@ -10,13 +10,7 @@ import { default as net } from 'net';
 import { default as whyisnoderunning } from 'why-is-node-running';
 import { default as clog } from 'ee-log';
 
-/* Don't need this now that we're in a container
-// We're using dotenv for now to load config from .env, but once we're containerized we'll just get them directly
-import { default as dotenv } from 'dotenv';
-// Populate process.env from .env
-dotenv.config();
-*/
-
+// TODO: make this come from an envvar (doesn't work with just process.env.DEBUG)
 const debug = true;
 
 const config = {
@@ -36,17 +30,16 @@ const config = {
   gameMode: process.env.SRCDS_GAMEMODE,
   gslt: process.env.SRCDS_GSLT,
   wsapikey: process.env.SRCDS_WSAPIKEY,
-  gameDir: path.normalize('/opt/srcds'),
+  redisHost: process.env.REDIS_HOST,
+  redisPort: process.env.REDIS_PORT,
+  redisPassword: process.env.REDIS_PASSWORD,
 };
 
 if (debug) clog.debug('Config:', config);
 
-// Sub to redis update channel
-
 // Setup SRCDS command line options
 // eslint-disable-next-line prettier/prettier
 const srcdsCommandLine = [
-  `${config.gameDir}/srcds_run`,
   `-game ${config.game}`,
   `-usercon`,
   `-ip ${config.ip}`,
@@ -63,63 +56,110 @@ const srcdsCommandLine = [
   `-authkey ${config.wsapikey}`,
   `-nobreakpad`,
 ];
+
 if (debug) clog.debug('SRCDS Command Line:', srcdsCommandLine);
 
 // Spawn SRCDS
-const srcdsChild = child_process.spawn('bash', srcdsCommandLine, {
+const srcdsChild = child_process.spawn('/opt/srcds/srcds_linux', srcdsCommandLine, {
   cwd: '/opt/srcds',
   env: {
     HOME: '/home/steam',
+    LD_LIBRARY_PATH: `${config.basedir}:${config.basedir}/bin`,
   },
 });
 
+// Connect srcds's stdin/out to ours
 srcdsChild.stdout.pipe(process.stdout, { end: false });
 srcdsChild.stderr.pipe(process.stderr, { end: false });
 process.stdin.pipe(srcdsChild.stdin, { end: false });
 
+// Watch stdout for update notifications
+srcdsChild.stdout.on('data', (data) =>{
+  data = data.toString();
+  if (data.includes('MasterRequestRestart')) {
+    console.log('\n\nServer update required\n\n');
+  }
+  // TODO: publish notification to redis to trigger srcds_downloader into doing the thing
+  // TODO: stop srcds
+  // TODO: wait for download_complete flag to be set
+  // TODO: start srcds
+});
+
+// Set our exit code to srcds's exit code
+srcdsChild.on('exit', (code) => {
+  console.log(`\n\nSRCDS Exited with code ${code}\n\n`);
+  process.exitCode = code;
+});
+
+// Handle SIGTERM - ask srcds to shutdown cleanly
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, exiting');
+  shutdownSrcds(srcdsChild);
+});
+
+/* Disabled for now
 // Create a telnet server for SRCDS console
 const consoleServer = net.createServer((socket) => {
   socket.setNoDelay(true);
+
+  // Connect srcds's stdin/out to the socket'
   socket.pipe(srcdsChild.stdin, { end: false });
   srcdsChild.stdout.pipe(socket, { end: false });
   srcdsChild.stderr.pipe(socket, { end: false });
-  process.on('SIGINT', () => {
-    socket.destroy();
-  });
+
+  // When srcds exits, close any open sockets
   srcdsChild.on('exit', (code) => {
-    console.log(`SRCDS exited with code ${code}`);
     socket.destroy();
   });
+
+  // When the console server stops listening, close any open sockets
   consoleServer.on('close', () => {
     socket.destroy();
   });
 });
+
+// Start up the console server
 consoleServer.listen({
   port: 28001,
   host: 'localhost',
 });
+
+// Handle SIGTERM - close down the console server
+process.on('SIGTERM', () => {
+  consoleServer.close();
+})
+
+// Print some stuff to console
 consoleServer.on('listening', () => {
-  console.log('SRCDS Console listening on localhost:28001');
-});
-consoleServer.on('connection', (socket) => {
-  console.log(`SRCDS Console connection established from ${socket.remoteAddress}`);
+  console.log('\n\nSRCDS Console listening on localhost:28001\n\n');
 });
 
-// Handle SIGTERM
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, exiting');
+// ""log"" connections
+consoleServer.on('connection', (socket) => {
+  console.log(`\n\nSRCDS Console connection established from ${socket.remoteAddress}\n\n`);
+});
+
+// Handle SIGTERM - close down the console server
+*/
+
+function shutdownSrcds(child) {
+  // Prepare a sigkill if srcds doesn't exit within 30 seconds
+  const timeout = setTimeout(() => {
+    console.log('\n\nTimeout reached, sending SIGTERM to srcds');
+    srcdsChild.kill('SIGTERM');
+  }, 30000);
+
   // Ask SRCDS to exit cleanly
-  srcdsChild.stdin.write(`echo "QUIT command received at ${Date.now()}"\n`);
-  srcdsChild.stdin.write('quit\n', 'utf8', () => {
-    console.log('"quit" command sent successfully');
-    // When the child quits
-    srcdsChild.on('exit', (code) => {
-      console.log(`SRCDS exited with code ${code}`);
-      consoleServer.close();
+  // First 'say' and 'echo' the date the command was received
+  child.stdin.write(`\n\nsay "QUIT command received at ${Date.now()}"\n\n`, 'utf8');
+  child.stdin.write(`\n\necho "QUIT command received at ${Date.now()}"\n\n`, 'utf8');
+  // Then send the 'quit' command
+  child.stdin.write('\n\nquit\n\n', 'utf8', () => {
+    console.log('\n\n"quit" command sent successfully\n\n');
+    child.removeAllListeners();
+    // When the srcdsChild quits
+    child.on('exit', () => {
+      clearTimeout(timeout);
     });
   });
-});
-
-srcdsChild.on('exit', (code) => {
-  console.log(`SRCDS Exited with code ${code}?? (cleanup manually)`);
-});
+}

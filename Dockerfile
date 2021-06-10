@@ -27,6 +27,7 @@ RUN set -x \
     libsdl2-2.0-0:i386 \
     curl \
     locales \
+    procps \
   && sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen \
   && dpkg-reconfigure --frontend=noninteractive locales \
   && useradd -u "${PUID}" -m "${USER}" \
@@ -71,7 +72,7 @@ ENV SRCDS_WSAPIKEY=''
 COPY app/ ${HOMEDIR}/srcds_runner
 
 WORKDIR ${HOMEDIR}/srcds_runner
-ENTRYPOINT ["node", "srcds_runner.mjs"]
+ENTRYPOINT ["node", "daemon.mjs"]
 
 EXPOSE  27015/tcp \
         27015/udp \
