@@ -9,7 +9,7 @@ services:
     stdin_open: true
     tty: true
     volumes:
-      - srcds:/opt/srcds    
+      - srcds_template:/opt/srcds    
     environment:
       - SRCDS_IDENT=template
       - SRCDS_GAMEID=740
@@ -30,12 +30,11 @@ services:
       - 27215:27015
       - 27215:27015/udp
       - 27220:27020/udp
-      #- 27230:28001
 
 volumes:
-  srcds:
+  srcds_template:
     driver: local
     driver_opts:
       type: overlay
-      o: lowerdir=/opt/srcds/serverfiles/740,upperdir=/opt/srcds/instances/template/persistent_srcds,workdir=/opt/srcds/instances/template/.work_srcds
+      o: lowerdir=/opt/srcds/serverfiles/740,upperdir=/opt/srcds/instances/template/srcds_persistent,workdir=/opt/srcds/instances/template/.srcds_work
       device: template_srcds
