@@ -14,7 +14,6 @@ import { default as clog } from 'ee-log';
 const debug = true;
 
 const config = {
-  basedir: process.env.SRCDS_BASEDIR,
   ident: process.env.SRCDS_IDENT,
   gameid: process.env.SRCDS_GAMEID,
   game: process.env.SRCDS_GAME,
@@ -64,7 +63,7 @@ const srcdsChild = child_process.spawn('/home/container/srcds/srcds_linux', srcd
   cwd: '/home/container/srcds',
   env: {
     HOME: '/home/container',
-    LD_LIBRARY_PATH: `${config.basedir}:${config.basedir}/bin`,
+    LD_LIBRARY_PATH: `/home/container/srcds:/home/container/srcds/bin`,
   },
 });
 
