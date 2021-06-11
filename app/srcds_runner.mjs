@@ -60,10 +60,10 @@ const srcdsCommandLine = [
 if (debug) clog.debug('SRCDS Command Line:', srcdsCommandLine);
 
 // Spawn SRCDS
-const srcdsChild = child_process.spawn('/opt/srcds/srcds_linux', srcdsCommandLine, {
-  cwd: '/opt/srcds',
+const srcdsChild = child_process.spawn('/home/container/srcds/srcds_linux', srcdsCommandLine, {
+  cwd: '/home/container/srcds',
   env: {
-    HOME: '/home/steam',
+    HOME: '/home/container',
     LD_LIBRARY_PATH: `${config.basedir}:${config.basedir}/bin`,
   },
 });

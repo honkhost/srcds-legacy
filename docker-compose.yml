@@ -3,13 +3,10 @@ services:
   srcds:
     image: srcds_runner:dev01
     hostname: template
-    mem_limit: 2048m
-    mem_reservation: 1024M
-    cpus: 0.5
     stdin_open: true
     tty: true
     volumes:
-      - srcds_template:/opt/srcds    
+      - srcds_template:/home/container/srcds
     environment:
       - SRCDS_IDENT=template
       - SRCDS_GAMEID=740
