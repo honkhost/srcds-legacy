@@ -1,14 +1,14 @@
 {
-  "name": "srcds_runner",
+  "name": "sourchestrator_runner",
   "version": "0.0.1",
   "description": "runs srcds",
-  "main": "srcds_runner.js",
+  "main": "daemon.js",
   "scripts": {
     "test": "node_modules/.bin/eslint --ignore-path ../.gitignore ."
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/epers/srcds_runner.git"
+    "url": "https://github.com/epers/sourchestrator_runner"
   },
   "keywords": [
     "srcds"
@@ -20,7 +20,6 @@
   },
   "homepage": "https://github.com/epers/srcds_runner#readme",
   "dependencies": {
-    "dotenv": "^10.0.0",
     "ee-log": "^3.0.9"
   },
   "devDependencies": {
