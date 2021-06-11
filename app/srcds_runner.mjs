@@ -97,51 +97,6 @@ process.on('SIGTERM', () => {
   shutdownSrcds(srcdsChild);
 });
 
-/* Disabled for now
-// Create a telnet server for SRCDS console
-const consoleServer = net.createServer((socket) => {
-  socket.setNoDelay(true);
-
-  // Connect srcds's stdin/out to the socket'
-  socket.pipe(srcdsChild.stdin, { end: false });
-  srcdsChild.stdout.pipe(socket, { end: false });
-  srcdsChild.stderr.pipe(socket, { end: false });
-
-  // When srcds exits, close any open sockets
-  srcdsChild.on('exit', (code) => {
-    socket.destroy();
-  });
-
-  // When the console server stops listening, close any open sockets
-  consoleServer.on('close', () => {
-    socket.destroy();
-  });
-});
-
-// Start up the console server
-consoleServer.listen({
-  port: 28001,
-  host: 'localhost',
-});
-
-// Handle SIGTERM - close down the console server
-process.on('SIGTERM', () => {
-  consoleServer.close();
-})
-
-// Print some stuff to console
-consoleServer.on('listening', () => {
-  console.log('\n\nSRCDS Console listening on localhost:28001\n\n');
-});
-
-// ""log"" connections
-consoleServer.on('connection', (socket) => {
-  console.log(`\n\nSRCDS Console connection established from ${socket.remoteAddress}\n\n`);
-});
-
-// Handle SIGTERM - close down the console server
-*/
-
 function shutdownSrcds(child) {
   // Prepare a sigkill if srcds doesn't exit within 30 seconds
   const timeout = setTimeout(() => {
