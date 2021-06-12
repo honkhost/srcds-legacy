@@ -5,6 +5,7 @@ FROM debian:buster-slim
 LABEL maintainer="pers.edwin@gmail.com"
 
 USER root
+COPY ./app /srcds_runner
 RUN set -x \
   && export DEBIAN_FRONTEND=noninteractive \
   && dpkg --add-architecture i386 \
@@ -29,7 +30,10 @@ RUN set -x \
   && rm -rf /var/lib/apt/lists/* \
   && adduser --disabled-password --gecos container --home /home/container container \
   && ln -sf "/home/container/steamcmd/linux32/steamclient.so" "/usr/lib/i386-linux-gnu/steamclient.so" \
-  && ln -sf "/home/container/steamcmd/linux64/steamclient.so" "/usr/lib/x86_64-linux-gnu/steamclient.so" 
+  && ln -sf "/home/container/steamcmd/linux64/steamclient.so" "/usr/lib/x86_64-linux-gnu/steamclient.so" \
+  && mkdir -p /srcds_runner \
+  && chown -R container:container /srcds_runner
+
 
 USER container
 ENV USER=container \
@@ -63,7 +67,10 @@ RUN set -x \
     && mkdir -p "/home/container/.steam/sdk32" \
     && ln -s "/home/container/steamcmd/linux32/steamclient.so" "/home/container/.steam/sdk32/steamclient.so"
 
-COPY ./app /srcds_runner
+RUN set -x \
+    && ls -alh /srcds_runner \
+    && cd /srcds_runner \
+    && npm install
 
 EXPOSE  27015/tcp \
         27015/udp \

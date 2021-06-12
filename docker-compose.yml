@@ -1,7 +1,7 @@
 version: "3"
 services:
   srcds:
-    image: runner:dev01
+    image: srcds:dev01
     hostname: template
     stdin_open: true
     tty: true
