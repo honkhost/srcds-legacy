@@ -87,11 +87,6 @@ redis.on('message', (channel, msg) => {
         if (msg === 'UPDATEREQUIRED') {
           console.log('\n\nUpdate required, stopping srcds\n\n');
           child.kill('SIGTERM');
-          setTimeout(() => {
-            child = child_process.fork('./srcds_wrapper.mjs', [], {
-              stdio: 'inherit',
-            });
-          }, 30000);
         }
       });
       child.on('exit', (code) => {

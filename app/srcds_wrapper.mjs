@@ -69,10 +69,6 @@ srcdsChild.stdout.pipe(process.stdout, { end: false });
 srcdsChild.stderr.pipe(process.stderr, { end: false });
 process.stdin.pipe(srcdsChild.stdin, { end: false });
 
-setTimeout(() => {
-  process.send('UPDATEREQUIRED');
-}, 30000);
-
 // Watch stdout for update notifications
 srcdsChild.stdout.on('data', (data) => {
   data = data.toString();
