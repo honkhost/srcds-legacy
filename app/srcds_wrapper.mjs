@@ -4,10 +4,7 @@
 // Managed by daemon.mjs
 
 // Imports
-import { default as path } from 'path';
 import { default as child_process } from 'child_process';
-import { default as net } from 'net';
-import { default as whyisnoderunning } from 'why-is-node-running';
 import { default as clog } from 'ee-log';
 
 // TODO: make this come from an envvar (doesn't work with just process.env.DEBUG)
