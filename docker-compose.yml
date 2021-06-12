@@ -1,7 +1,7 @@
 version: "3"
 services:
   srcds:
-    image: srcds_runner:dev01
+    image: runner:dev01
     hostname: template
     stdin_open: true
     tty: true
@@ -23,10 +23,14 @@ services:
       - SRCDS_GAMEMODE=2
       - SRCDS_GSLT=
       - SRCDS_WSAPIKEY=
+      - REDIS_PASSWORD=somepasswordverystronk
     ports:
       - 27215:27015
       - 27215:27015/udp
       - 27220:27020/udp
+    networks:
+      - default
+      - redis
 
 volumes:
   srcds_template:
@@ -35,3 +39,9 @@ volumes:
       type: overlay
       o: lowerdir=/opt/srcds/serverfiles/740,upperdir=/opt/srcds/instances/template/srcds_persistent,workdir=/opt/srcds/instances/template/.srcds_work
       device: template_srcds
+
+networks:
+  default:
+    driver: bridge
+  redis:
+    external: true

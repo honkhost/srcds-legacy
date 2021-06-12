@@ -51,7 +51,9 @@ ENV USER=container \
     SRCDS_GAMETYPE='1' \
     SRCDS_GAMEMODE='2' \
     SRCDS_GSLT='' \
-    SRCDS_WSAPIKEY=''
+    SRCDS_WSAPIKEY='' \
+    REDIS_PASSWORD="" \
+    NODE_ENV=production
 
 RUN set -x \
     && mkdir -p "/home/container/steamcmd" \
@@ -68,4 +70,4 @@ EXPOSE  27015/tcp \
         27020/udp
 
 WORKDIR /srcds_runner
-CMD ["node", "daemon.mjs"]
+CMD ["node", "srcds_daemon.mjs"]

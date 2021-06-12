@@ -20,7 +20,8 @@
   },
   "homepage": "https://github.com/epers/srcds_runner#readme",
   "dependencies": {
-    "ee-log": "^3.0.9"
+    "ee-log": "^3.0.9",
+    "redis": "^3.1.2"
   },
   "devDependencies": {
     "eslint": "^7.28.0",
