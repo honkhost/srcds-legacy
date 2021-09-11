@@ -8,7 +8,9 @@
       "node",
       "promise",
       "prettier",
-      "security"
+      "security",
+      "@babel"
+
   ],
   "extends" : [
       "eslint:recommended",
@@ -21,16 +23,19 @@
       "Atomics": "readonly",
       "SharedArrayBuffer": "readonly"
   },
+  "overrides": [{
+    "files": ["*.mjs"],
+    "parser": "@babel/eslint-parser"
+  }],
   "parserOptions": {
-      "ecmaVersion": 2020
+      "ecmaVersion": 2021,
+      "requireConfigFile": true,
+      "configFile": "app/babel.config.json",
+      "rootMode": "upward"
   },
   "rules": {
-      "capitalized-comments": ["error", "always", {
-          "ignorePattern": "prettier-ignore"
-      }],
       "arrow-parens": ["error", "always"],
       "prefer-arrow-callback": ["error"],
-      "arrow-body-style": ["error", "always"],
-      "shebang": ["off"]
+      "arrow-body-style": ["error", "always"]
   }
 }
