@@ -1,12 +1,12 @@
 # syntax=docker/dockerfile:1
 
-FROM registry.honkhost.gg/honkhost/srcds/steamcmd:latest-dev
+FROM registry.honkhost.gg/honkhost/srcds/steamcmd:latest
 LABEL maintainer="epers@honkhost.gg"
 
 USER root
 
 ENV NODE_ENV=production
-COPY ./dist /dist
+COPY ./src /dist
 COPY ./package.json /dist/package.json
 COPY ./package-lock.json /dist/package-lock.json
 
