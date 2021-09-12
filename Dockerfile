@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM docker.honkhost.gg/steamcmd-base:latest-dev
+FROM registry.honkhost.gg/honkhost/srcds/steamcmd:latest-dev
 LABEL maintainer="epers@honkhost.gg"
 
 USER root

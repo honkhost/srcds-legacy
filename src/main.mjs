@@ -10,6 +10,7 @@ import { default as clog } from 'ee-log';
 import { default as Redlock } from 'redlock';
 import { default as pty } from 'node-pty';
 import { default as why } from 'why-is-node-running';
+import { default as child_process } from 'child_process';
 
 // Globals
 // Loud but useful
@@ -38,7 +39,7 @@ const redisDB = process.env.REDIS_DB || '11';
 // SRCDS config
 const srcdsConfig = {
   appid: process.env.SRCDS_APPID || '740',
-  game: process.env.SRCDS_GAME || '/home/container/srcds/csgo',
+  //game: process.env.SRCDS_GAME || '/home/container/srcds/csgo',
   ip: process.env.SRCDS_IP || '0.0.0.0',
   port: process.env.SRCDS_PORT || '27015',
   clientPort: process.env.SRCDS_CLIENTPORT || '27005',
@@ -54,9 +55,11 @@ const srcdsConfig = {
 };
 
 const srcdsCommandLine = [
+  `--login`,
+  `${srcdsDir}/srcds_run`,
   `-usercon`,
   `-nobreakpad`,
-  `-game ${srcdsConfig.game}`,
+  //`-game ${srcdsConfig.game}`,
   `-ip ${srcdsConfig.ip}`,
   `-port ${srcdsConfig.port}`,
   `-nohltv`,
@@ -70,6 +73,8 @@ const srcdsCommandLine = [
   `-authkey ${srcdsConfig.wsapikey}`,
 ];
 
+/* Cluster
+*/
 const redisNodes = [
   {
     port: redisPort,
@@ -111,6 +116,49 @@ const redisLock = new Redlock([redisLockClient], {
   retryDelay: 5000,
   retryJitter: 1000,
 });
+
+/* Non-Cluster
+// Setup redis clients
+// Get/Set/Publish
+const redis = new Redis({
+  redisOptions: {
+    port: redisPort,
+    host: redisHost,
+    family: 4,
+    password: redisPassword,
+    db: redisDB,
+  }
+});
+
+// Subscribe
+const redisSub = new Redis({
+  redisOptions: {
+    port: redisPort,
+    host: redisHost,
+    family: 4,
+    password: redisPassword,
+    db: redisDB,
+  }
+});
+
+// RedLock client
+const redisLockClient = new Redis({
+  redisOptions: {
+    port: redisPort,
+    host: redisHost,
+    family: 4,
+    password: redisPassword,
+    db: redisDB,
+  }
+});
+
+// RedLock client
+const redisLock = new Redlock([redisLockClient], {
+  retryCount: 2,
+  retryDelay: 5000,
+  retryJitter: 1000,
+});
+*/
 
 var shutdownInProgress = false;
 var updateInProgress = false;
@@ -311,8 +359,8 @@ async function spawnSrcds(lock, lockRenewInterval) {
     renewRunningInstanceInfo(60000);
   }, 30000);
   // Spawn srcds
-  if (debug) clog.debug(`Spawning srcds at ${srcdsDir}/srcds_run with options`, srcdsCommandLine);
-  const srcds = pty.spawn(`${srcdsDir}/srcds_linux`, srcdsCommandLine, {
+  if (debug) clog.debug(`Spawning srcds at ${srcdsDir}/srcds_linux with options`, srcdsCommandLine);
+  const srcds = pty.spawn(`/bin/bash`, srcdsCommandLine, {
     handleFlowControl: true,
     cwd: srcdsDir,
     env: {
@@ -324,9 +372,11 @@ async function spawnSrcds(lock, lockRenewInterval) {
     },
   });
 
+/*
   stdin.on('line', (line) => {
     srcds.write(`${line}\r\n`);
   });
+*/
 
   // Watch stdout for update notifications
   srcds.onData(async (data) => {
@@ -387,34 +437,29 @@ async function spawnSrcds(lock, lockRenewInterval) {
 
   process.on('SIGTERM', async () => {
     if (debug) clog.debug('SIGTERM received, shutting down');
-    shutdownInProgress = true;
     await shutdownSrcds(srcds, 'SIGTERM');
-    clearInterval(lockRenewInterval);
-    await renewRunningInstanceInfo(0);
-    await renewInstanceInfo(0);
-    shutdownRedis(500);
-    setTimeout(() => {
-      why();
-    }, 2000).unref();
   });
-
   return srcds;
 }
 
 function shutdownSrcds(srcds, reason) {
-  return new Promise((resolve, reject) => {
-    reason = reason || 'unknown';
-    // Prepare a sigkill if srcds doesn't exit within 10 seconds
-    // Ask SRCDS to exit cleanly
-    // First 'say' and 'echo' the date the command was received
-    srcds.write(`\n\nsay 'quit' command received at ${new Date().toTimeString()} [${reason}]\n\n`, 'utf8');
-    // Then send the 'quit' command
-    srcds.write('\n\nquit\n\n');
-    srcds.onExit(async (exit) => {
-      await renewRunningInstanceInfo(0);
-      return resolve(exit);
+  if (srcds) {
+    return new Promise((resolve, reject) => {
+      reason = reason || 'unknown';
+      // Prepare a sigkill if srcds doesn't exit within 10 seconds
+      // Ask SRCDS to exit cleanly
+      // First 'say' and 'echo' the date the command was received
+      srcds.write(`\n\nsay 'quit' command received at ${new Date().toTimeString()} [${reason}]\n\n`, 'utf8');
+      // Then send the 'quit' command
+      srcds.write('\n\nquit\n\n');
+      srcds.onExit(async (exit) => {
+        await renewRunningInstanceInfo(0);
+        return resolve(exit);
+      });
     });
-  });
+  } else {
+    return 0;
+  }
 }
 
 function shutdownRedis(time) {
@@ -426,3 +471,16 @@ function shutdownRedis(time) {
     redisLockClient.quit();
   }, time);
 }
+
+process.on('SIGTERM', async () => {
+  if (debug) clog.debug('SIGTERM received, shutting down');
+  shutdownInProgress = true;
+  clearInterval(lockRenewInterval);
+  await renewRunningInstanceInfo(0);
+  await renewInstanceInfo(0);
+  shutdownRedis(500);
+  process.removeAllListeners();
+  setTimeout(() => {
+    why();
+  }, 2000).unref();
+});
