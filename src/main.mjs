@@ -10,7 +10,6 @@ import { default as clog } from 'ee-log';
 import { default as Redlock } from 'redlock';
 import { default as pty } from 'node-pty';
 import { default as why } from 'why-is-node-running';
-import { default as child_process } from 'child_process';
 
 // Globals
 // Loud but useful
@@ -31,7 +30,7 @@ const steamcmdDir = process.env.STEAMCMD_DIR || path.normalize(path.join(homeDir
 const srcdsDir = process.env.SRCDS_DIR || path.normalize(path.join(homeDir, 'srcds'));
 
 // Redis config
-const redisHost = process.env.REDIS_HOST || '';
+const redisHost = process.env.REDIS_HOST || 'redis';
 const redisPort = Number.parseInt(process.env.REDIS_PORT) || '6379';
 const redisPassword = process.env.REDIS_PASSWORD || 'somepasswordverystronk';
 const redisDB = process.env.REDIS_DB || '11';
@@ -73,8 +72,6 @@ const srcdsCommandLine = [
   `-authkey ${srcdsConfig.wsapikey}`,
 ];
 
-/* Cluster
-*/
 const redisNodes = [
   {
     port: redisPort,
@@ -117,49 +114,6 @@ const redisLock = new Redlock([redisLockClient], {
   retryJitter: 1000,
 });
 
-/* Non-Cluster
-// Setup redis clients
-// Get/Set/Publish
-const redis = new Redis({
-  redisOptions: {
-    port: redisPort,
-    host: redisHost,
-    family: 4,
-    password: redisPassword,
-    db: redisDB,
-  }
-});
-
-// Subscribe
-const redisSub = new Redis({
-  redisOptions: {
-    port: redisPort,
-    host: redisHost,
-    family: 4,
-    password: redisPassword,
-    db: redisDB,
-  }
-});
-
-// RedLock client
-const redisLockClient = new Redis({
-  redisOptions: {
-    port: redisPort,
-    host: redisHost,
-    family: 4,
-    password: redisPassword,
-    db: redisDB,
-  }
-});
-
-// RedLock client
-const redisLock = new Redlock([redisLockClient], {
-  retryCount: 2,
-  retryDelay: 5000,
-  retryJitter: 1000,
-});
-*/
-
 var shutdownInProgress = false;
 var updateInProgress = false;
 
@@ -170,32 +124,55 @@ var stdin = readline.createInterface({
 
 redis.on('connect', (message) => {
   console.log('connect event caught');
-  clog.debug(message);
 });
 
 redis.on('error', (message) => {
   console.log('error event caught');
-  clog.debug(message);
+  clog.error(message);
 });
+
+redis.on('wait', (message) => {
+  console.log('wait event caught');
+});
+
+redis.on('ready', (message) => {
+  console.log('ready event caught');
+});
+
 
 redisSub.on('connect', (message) => {
   console.log('connect event caught');
-  clog.debug(message);
 });
 
 redisSub.on('error', (message) => {
   console.log('error event caught');
-  clog.debug(message);
+  clog.error(message);
 });
+
+redisSub.on('wait', (message) => {
+  console.log('wait event caught');
+});
+
+redisSub.on('ready', (message) => {
+  console.log('ready event caught');
+});
+
 
 redisLockClient.on('connect', (message) => {
   console.log('connect event caught');
-  clog.debug(message);
 });
 
 redisLockClient.on('error', (message) => {
   console.log('error event caught');
-  clog.debug(message);
+  clog.error(message);
+});
+
+redisLockClient.on('wait', (message) => {
+  console.log('wait event caught');
+});
+
+redisLockClient.on('ready', (message) => {
+  console.log('ready event caught');
 });
 
 if (debug) clog.debug('process.env', process.env);
@@ -204,6 +181,8 @@ if (debug) clog.debug('SRCDS command line', srcdsCommandLine);
 
 const initDownloaderCheck = await redis.get('downloaderAvailable');
 if (debug) clog.debug('initDownloaderCheck', initDownloaderCheck);
+
+var lockRenewInterval = null;
 
 // Check to see if the lock exists
 if (debug) clog.debug(`Checking for lock on ${ident}:srcdsLock`);
@@ -221,7 +200,7 @@ if (lockCheck) {
   console.log(`Lock acquired on ${ident}:srcdsLock`);
   // Setup an interval to renew running instance flags
   renewInstanceInfo(60000);
-  const lockRenewInterval = setInterval(() => {
+  lockRenewInterval = setInterval(() => {
     if (debug) clog.debug('Extending lock');
     lock.extend(60000);
     renewInstanceInfo(60000);
@@ -235,13 +214,13 @@ if (lockCheck) {
     //if (errorAction === 'throw') throw new Error(`updateStatus in invalid state: ${updateStatus}`);
     //clog.error(`updateStatus in invalid state: ${updateStatus}`);
     await waitUpdateStatus();
-    await spawnSrcds(lock, lockRenewInterval);
+    await spawnSrcds(lock);
   } else if (updateStatus === 'waiting' || updateStatus === 'running') {
     await waitUpdateStatus();
-    await spawnSrcds(lock, lockRenewInterval);
+    await spawnSrcds(lock);
   } else if (updateStatus === 'notRequired' || updateStatus === 'complete') {
     // Spawn srcds
-    await spawnSrcds(lock, lockRenewInterval);
+    await spawnSrcds(lock);
   }
 }
 
@@ -354,7 +333,7 @@ function waitDownloaderAvailable() {
   });
 }
 
-async function spawnSrcds(lock, lockRenewInterval) {
+async function spawnSrcds(lock) {
   const runningInstanceRenewInterval = setInterval(() => {
     renewRunningInstanceInfo(60000);
   }, 30000);
@@ -372,11 +351,9 @@ async function spawnSrcds(lock, lockRenewInterval) {
     },
   });
 
-/*
   stdin.on('line', (line) => {
     srcds.write(`${line}\r\n`);
   });
-*/
 
   // Watch stdout for update notifications
   srcds.onData(async (data) => {
@@ -406,6 +383,7 @@ async function spawnSrcds(lock, lockRenewInterval) {
       srcds.removeAllListeners();
       stdin.removeAllListeners();
       stdin.close();
+      shutdownRedis(1000);
     } else if (updateInProgress) {
       if (debug) clog.debug('srcds exited with code', exit);
       await renewRunningInstanceInfo(0); // Expire it now
@@ -420,7 +398,7 @@ async function spawnSrcds(lock, lockRenewInterval) {
       srcds.removeAllListeners();
       stdin.removeAllListeners();
       clearInterval(runningInstanceRenewInterval);
-      await spawnSrcds(lock, lockRenewInterval);
+      await spawnSrcds(lock);
     }
   });
 
@@ -431,14 +409,16 @@ async function spawnSrcds(lock, lockRenewInterval) {
       await shutdownSrcds(srcds, message);
       await waitUpdateStatus();
       updateInProgress = false;
-      spawnSrcds(lock, lockRenewInterval);
+      spawnSrcds(lock);
     }
   });
 
   process.on('SIGTERM', async () => {
     if (debug) clog.debug('SIGTERM received, shutting down');
     await shutdownSrcds(srcds, 'SIGTERM');
+    clearInterval(runningInstanceRenewInterval);
   });
+
   return srcds;
 }
 
@@ -464,6 +444,7 @@ function shutdownSrcds(srcds, reason) {
 
 function shutdownRedis(time) {
   setTimeout(() => {
+    console.log('Shutting down redis clients');
     redis.quit();
     redisSub.unsubscribe();
     redisSub.removeAllListeners();
@@ -478,9 +459,8 @@ process.on('SIGTERM', async () => {
   clearInterval(lockRenewInterval);
   await renewRunningInstanceInfo(0);
   await renewInstanceInfo(0);
-  shutdownRedis(500);
   process.removeAllListeners();
   setTimeout(() => {
     why();
-  }, 2000).unref();
+  }, 10000).unref();
 });

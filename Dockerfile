@@ -1,18 +1,31 @@
 # syntax=docker/dockerfile:1
-
-FROM registry.honkhost.gg/honkhost/srcds/steamcmd:latest
-LABEL maintainer="epers@honkhost.gg"
-
+FROM node:16.3.0-alpine3.12 as builder
 USER root
 
+RUN set -exu \
+    && apk add --no-cache \
+        curl \
+        libstdc++ \
+        gcompat \
+        bash \
+        gcc \
+        g++ \
+        make \
+        python3
 ENV NODE_ENV=production
-COPY ./src /dist
+COPY ./dist /dist
 COPY ./package.json /dist/package.json
 COPY ./package-lock.json /dist/package-lock.json
-
 RUN set -x \
     && cd /dist \
     && npm install --production
+
+###############################################################
+
+FROM registry.honkhost.gg/honkhost/steamcmd:latest-dev
+
+USER root
+COPY --from=builder /dist /dist
 
 USER container
 ENV USER=container \
