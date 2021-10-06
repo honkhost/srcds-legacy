@@ -72,40 +72,16 @@ const srcdsCommandLine = [
   `-authkey ${srcdsConfig.wsapikey}`,
 ];
 
-const redisNodes = [
-  {
-    port: redisPort,
-    host: redisHost
-  }
-]
+const redisConfig = {
+  port: redisPort,
+  host: redisHost,
+  password: redisPassword,
+  db: redisDB,
+}
 
-// Setup redis clients
-// Get/Set/Publish
-const redis = new Redis.Cluster(redisNodes, {
-  redisOptions: {
-    family: 4,
-    password: redisPassword,
-    db: redisDB,
-  }
-});
-
-// Subscribe
-const redisSub = new Redis.Cluster(redisNodes, {
-  redisOptions: {
-    family: 4,
-    password: redisPassword,
-    db: redisDB,
-  }
-});
-
-// RedLock client
-const redisLockClient = new Redis.Cluster(redisNodes, {
-  redisOptions: {
-    family: 4,
-    password: redisPassword,
-    db: redisDB,
-  }
-});
+const redis = new Redis(redisConfig)
+const redisSub = new Redis(redisConfig)
+const redisLockClient = new Redis(redisConfig)
 
 // RedLock client
 const redisLock = new Redlock([redisLockClient], {
@@ -461,6 +437,6 @@ process.on('SIGTERM', async () => {
   await renewInstanceInfo(0);
   process.removeAllListeners();
   setTimeout(() => {
-    why();
+    shutdownRedis(0);
   }, 10000).unref();
 });

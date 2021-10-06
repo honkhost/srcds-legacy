@@ -1,35 +1,18 @@
 # syntax=docker/dockerfile:1
 
-FROM registry.honkhost.gg/honkhost/srcds/steamcmd:latest-dev
+FROM registry.honkhost.gg/honkhost/steamcmd:latest
 LABEL maintainer="epers@honkhost.gg"
 
 USER root
 
-RUN set -exu \
-    && apk add --no-cache \
-        curl \
-        libstdc++ \
-        gcompat \
-        bash \
-        gcc \
-        g++ \
-        make \
-        python3
 ENV NODE_ENV=production
-COPY ./dist /dist
+COPY ./src /dist
 COPY ./package.json /dist/package.json
 COPY ./package-lock.json /dist/package-lock.json
 
 RUN set -exu \
   && cd /dist \
   && npm install --production
-
-###############################################################
-
-FROM registry.honkhost.gg/honkhost/steamcmd:latest-dev
-
-USER root
-COPY --from=builder /dist /dist
 
 USER container
 ENV USER=container \

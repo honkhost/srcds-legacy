@@ -5,7 +5,6 @@
   "private": true,
   "scripts": {
     "test": "node_modules/.bin/eslint --ignore-path ../.gitignore .",
-    "build-release": "set -exu && node_modules/.bin/rollup -c && ./build.sh",
     "build": "./build.sh"
   },
   "repository": {
