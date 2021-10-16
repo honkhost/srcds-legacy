@@ -25,9 +25,9 @@ const isTrustedUpdateSource = process.env.SRCDS_TRUSTUPDDATE || false;
 // Baseline Directories
 const homeDir = process.env.HOME || '/home/container';
 // Location of steamcmd.sh - /home/container/steamcmd
-const steamcmdDir = process.env.STEAMCMD_DIR || path.normalize(path.join(homeDir, 'steamcmd'));
+const steamcmdDir = process.env.STEAMCMDDIR || '/opt/steamcmd';
 // Location where we save game files - will NOT <appid> appended - /home/container/srcds
-const srcdsDir = process.env.SRCDS_DIR || path.normalize(path.join(homeDir, 'srcds'));
+const serverFilesDir = process.env.SERVERFILESDIR || '/opt/serverfiles';
 
 // Redis config
 const redisHost = process.env.REDIS_HOST || 'redis';
@@ -55,7 +55,7 @@ const srcdsConfig = {
 
 const srcdsCommandLine = [
   `--login`,
-  `${srcdsDir}/srcds_run`,
+  `${serverFilesDir}/srcds_run`,
   `-usercon`,
   `-nobreakpad`,
   //`-game ${srcdsConfig.game}`,
@@ -314,16 +314,16 @@ async function spawnSrcds(lock) {
     renewRunningInstanceInfo(60000);
   }, 30000);
   // Spawn srcds
-  if (debug) clog.debug(`Spawning srcds at ${srcdsDir}/srcds_linux with options`, srcdsCommandLine);
+  if (debug) clog.debug(`Spawning srcds at ${serverFilesDir}/srcds_linux with options`, srcdsCommandLine);
   const srcds = pty.spawn(`/bin/bash`, srcdsCommandLine, {
     handleFlowControl: true,
-    cwd: srcdsDir,
+    cwd: serverFilesDir,
     env: {
-      LD_LIBRARY_PATH: `${srcdsDir}:${srcdsDir}/bin`,
-      PATH: `${steamcmdDir}:${srcdsDir}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`,
+      LD_LIBRARY_PATH: `${serverFilesDir}:${serverFilesDir}/bin`,
+      PATH: `${steamcmdDir}:${serverFilesDir}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`,
       HOME: homeDir,
-      SRCDS_DIR: srcdsDir,
-      PWD: srcdsDir,
+      SRCDS_DIR: serverFilesDir,
+      PWD: serverFilesDir,
     },
   });
 

@@ -18,8 +18,8 @@ USER container
 ENV USER=container \
   HOME="/home/container" \
   HOMEDIR="/home/container" \
-  STEAMCMDDIR="/home/container/steamcmd" \
-  SRCDS_BASEDIR="/home/container/srcds" \
+  STEAMCMDDIR="/opt/steamcmd" \
+  SRCDS_BASEDIR="/opt/serverfiles" \
   SRCDS_APPID="740" \
   SRCDS_GAME="csgo" \
   SRCDS_HOSTNAME="csgo-server" \
