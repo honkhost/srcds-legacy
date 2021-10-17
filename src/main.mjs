@@ -26,7 +26,7 @@ const isTrustedUpdateSource = process.env.SRCDS_TRUSTUPDDATE || false;
 const homeDir = process.env.HOME || '/home/container';
 // Location of steamcmd.sh - /home/container/steamcmd
 const steamcmdDir = process.env.STEAMCMDDIR || '/opt/steamcmd';
-// Location where we save game files - will NOT <appid> appended - /home/container/srcds
+// Location where we save game files - will NOT <appid> appended - /opt/serverfiles
 const serverFilesDir = process.env.SERVERFILESDIR || '/opt/serverfiles';
 
 // Redis config
