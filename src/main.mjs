@@ -25,9 +25,9 @@ const isTrustedUpdateSource = process.env.SRCDS_TRUSTUPDDATE || false;
 // Baseline Directories
 const homeDir = process.env.HOME || '/home/container';
 // Location of steamcmd.sh - /home/container/steamcmd
-const steamcmdDir = process.env.STEAMCMDDIR || '/opt/steamcmd';
+const steamcmdDir = process.env.SRCDS_STEAMCMDDIR || '/opt/steamcmd';
 // Location where we save game files - will NOT <appid> appended - /opt/serverfiles
-const serverFilesDir = process.env.SERVERFILESDIR || '/opt/serverfiles';
+const serverFilesDir = process.env.SRCDS_SERVERFILESDIR || '/opt/serverfiles';
 
 // Redis config
 const redisHost = process.env.REDIS_HOST || 'redis';
@@ -37,12 +37,9 @@ const redisDB = process.env.REDIS_DB || '11';
 
 // SRCDS config
 const srcdsConfig = {
-  appid: process.env.SRCDS_APPID || '740',
-  //game: process.env.SRCDS_GAME || '/home/container/srcds/csgo',
-  ip: process.env.SRCDS_IP || '0.0.0.0',
-  port: process.env.SRCDS_PORT || '27015',
-  clientPort: process.env.SRCDS_CLIENTPORT || '27005',
-  hltvPort: process.env.SRCDS_HLTVPORT || '27020',
+  appid: '740',
+  ip: '0.0.0.0',
+  port: process.env.SRCDS_PORT || '27215',
   tickrate: process.env.SRCDS_TICKRATE || '64',
   maxPlayers: process.env.SRCDS_MAXPLAYERS || '20',
   startupMap: process.env.SRCDS_STARTUPMAP || 'de_nuke',
@@ -54,22 +51,19 @@ const srcdsConfig = {
 };
 
 const srcdsCommandLine = [
-  `--login`,
-  `${serverFilesDir}/srcds_run`,
   `-usercon`,
   `-nobreakpad`,
-  //`-game ${srcdsConfig.game}`,
   `-ip ${srcdsConfig.ip}`,
   `-port ${srcdsConfig.port}`,
   `-nohltv`,
   `-tickrate ${srcdsConfig.tickrate}`,
+  `-maxplayers_override ${srcdsConfig.maxPlayers}`,
+  `-authkey ${srcdsConfig.wsapikey}`,
   `+map ${srcdsConfig.startupMap}`,
   `+servercfgfile ${srcdsConfig.serverCfgFile}`,
-  `-maxplayers_override ${srcdsConfig.maxPlayers}`,
   `+game_type ${srcdsConfig.gameType}`,
   `+game_mode ${srcdsConfig.gameMode}`,
   `+sv_setsteamaccount ${srcdsConfig.gslt}`,
-  `-authkey ${srcdsConfig.wsapikey}`,
 ];
 
 const redisConfig = {
@@ -315,7 +309,7 @@ async function spawnSrcds(lock) {
   }, 30000);
   // Spawn srcds
   if (debug) clog.debug(`Spawning srcds at ${serverFilesDir}/srcds_linux with options`, srcdsCommandLine);
-  const srcds = pty.spawn(`/bin/bash`, srcdsCommandLine, {
+  const srcds = pty.spawn(`${serverFilesDir}/srcds_run`, srcdsCommandLine, {
     handleFlowControl: true,
     cwd: serverFilesDir,
     env: {
