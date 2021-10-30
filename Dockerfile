@@ -21,6 +21,7 @@ ENV USER=container \
   SRCDS_STEAMCMDDIR="/opt/steamcmd" \
   SRCDS_SERVERFILESDIR="/opt/serverfiles" \
   SRCDS_HOSTNAME="csgo-server" \
+  SRCDS_GAME="csgo" \
   SRCDS_PORT="27215" \
   SRCDS_TICKRATE="64" \
   SRCDS_STARTUPMAP="de_nuke" \
