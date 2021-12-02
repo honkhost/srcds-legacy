@@ -229,7 +229,7 @@ var expressApp = express();
 var expressWs = expressWS(expressApp, null, {
   wsOptions: {
     verifyClient: (info, callback) => {
-      if (auth(info.req.headers['X-HonkHost-Websocket-Token'])) {
+      if (auth(info.req.headers['X-HonkHost-Instance-Token'])) {
         return callback(true);
       } else {
         return callback(false, 401, 'Unauthorized');
@@ -239,7 +239,7 @@ var expressWs = expressWS(expressApp, null, {
 });
 
 expressApp.use((request, response, next) => {
-  if (auth(request.headers['X-HonkHost-Websocket-Token'])) {
+  if (auth(request.headers['X-HonkHost-Instance-Token'])) {
     return next();
   } else {
     response.status(401).send('Unauthorized');
