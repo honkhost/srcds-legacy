@@ -398,10 +398,9 @@ function spawnSrcds() {
       }
 
       var parsedStats = data.match(statsRegex);
-      if (parsedStats) {
+      if (parsedStats || data === 'stats') {
         parsedStats = parsedStats[0].split(/\s+/);
         // TODO drop the first and last elements, adjust below as necessary
-        clog.debug('parsed stats', parsedStats);
         metrics.status.set(Number(1));
         metrics.cpu.set(Number(parsedStats[1]));
         metrics.netin.set(Number(parsedStats[2]));
@@ -414,10 +413,10 @@ function spawnSrcds() {
         metrics.varms.set(Number(parsedStats[9]));
         metrics.tick.set(Number(parsedStats[10]));
         statsEventRx.emit('complete', null);
+      } else {
+        console.log(`[${timestamp()}]  ${data}`);
+        srcds2wsPipe.push(data);
       }
-
-      console.log(`[${timestamp()}]  ${data}`);
-      srcds2wsPipe.push(data);
     });
 
     // When srcds exits
