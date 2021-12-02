@@ -30,7 +30,7 @@
   "parserOptions": {
       "ecmaVersion": 2021,
       "requireConfigFile": true,
-      "configFile": "app/babel.config.json",
+      "configFile": "babel.config.json",
       "rootMode": "upward"
   },
   "rules": {
