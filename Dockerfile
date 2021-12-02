@@ -17,24 +17,27 @@ RUN set -exu \
 USER container
 ENV USER=container \
   HOME="/home/container" \
-  HOMEDIR="/home/container" \
-  SRCDS_STEAMCMDDIR="/opt/steamcmd" \
-  SRCDS_SERVERFILESDIR="/opt/serverfiles" \
-  SRCDS_HOSTNAME="csgo-server" \
-  SRCDS_GAME="csgo" \
-  SRCDS_PORT="27215" \
+  NODE_ENV=production \
+  DEBUG="true" \
+  SRCDS_AUTOUPDATE="true" \
+  SRCDS_HTTP_PROXY="" \
+  SRCDS_FORCE_VALIDATE="" \
+  SRCDS_WS_STATIC_TOKEN="" \
+  SRCDS_PORT="27015" \
   SRCDS_TICKRATE="64" \
+  SRCDS_MAXPLAYERS="20" \
   SRCDS_STARTUPMAP="de_nuke" \
   SRCDS_SERVERCFGFILE="server.cfg" \
-  SRCDS_MAXPLAYERS="12" \
+  SRCDS_GAME="csgo" \
   SRCDS_GAMETYPE="1" \
   SRCDS_GAMEMODE="2" \
   SRCDS_GSLT="" \
   SRCDS_WSAPIKEY="" \
-  SRCDS_TRUSTUPDDATE="false" \
-  REDIS_PASSWORD="" \
-  REDIS_HOST="" \
-  NODE_ENV=production
+  SRCDS_RCON_PASSWORD="" \
+  SRCDS_GAME_PASSWORD="" \
+  SRCDS_PUBLIC="" \
+  SRCDS_FASTDLURL="" \
+  SRCDS_DEBUG_FAKE_STALE=""
 
 WORKDIR /dist
 ENTRYPOINT ["node", "main.mjs"]

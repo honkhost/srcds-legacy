@@ -3,436 +3,565 @@
 // Imports
 // Built-ins
 import { default as path } from 'path';
-import { default as readline } from 'readline';
-// External
-import { default as Redis } from 'ioredis';
-import { default as clog } from 'ee-log';
-import { default as Redlock } from 'redlock';
-import { default as pty } from 'node-pty';
-import { default as why } from 'why-is-node-running';
+import { default as crypto } from 'crypto';
+import { URL } from 'url';
+import { default as Stream } from 'stream';
+import { default as events } from 'events';
 
+// External
+import { default as clog } from 'ee-log';
+import { default as pty } from 'node-pty';
+import { default as Lock } from 'async-lock';
+import { default as express } from 'express';
+import { default as expressWS } from 'express-ws';
+import { default as prometheus } from 'prom-client';
+
+//
 // Globals
+
 // Loud but useful
 const debug = process.env.DEBUG || true;
 
-// What to do when we .catch() an error
-const errorAction = process.env.ERRACTION || 'throw';
+// Our identity - bail out really early if it isn't defined
+const ident = process.env.SRCDS_IDENT || '';
+if (ident === '') throw new Error('env var SRCDS_IDENT required');
 
-const ident = process.env.SRCDS_IDENT || 'template';
-
-const isTrustedUpdateSource = process.env.SRCDS_TRUSTUPDDATE || false;
-
+//
 // Baseline Directories
-const homeDir = process.env.HOME || '/home/container';
+const homeDir = '/home/container';
+
 // Location of steamcmd.sh - /home/container/steamcmd
-const steamcmdDir = process.env.SRCDS_STEAMCMDDIR || '/opt/steamcmd';
-// Location where we save game files - will NOT <appid> appended - /opt/serverfiles
-const serverFilesDir = process.env.SRCDS_SERVERFILESDIR || '/opt/serverfiles';
+const steamcmdDir = '/opt/steamcmd';
 
-// Redis config
-const redisHost = process.env.REDIS_HOST || 'redis';
-const redisPort = Number.parseInt(process.env.REDIS_PORT) || '6379';
-const redisPassword = process.env.REDIS_PASSWORD || 'somepasswordverystronk';
-const redisDB = process.env.REDIS_DB || '11';
+// Location where we save game files
+const serverFilesDir = '/opt/serverfiles';
 
-// SRCDS config
-const srcdsConfig = {
-  appid: '740',
-  ip: '0.0.0.0',
-  port: process.env.SRCDS_PORT || '27215',
-  tickrate: process.env.SRCDS_TICKRATE || '64',
-  maxPlayers: process.env.SRCDS_MAXPLAYERS || '20',
-  startupMap: process.env.SRCDS_STARTUPMAP || 'de_nuke',
-  serverCfgFile: process.env.SRCDS_SERVERCFGFILE || 'server.cfg',
-  game: process.env.SRCDS_GAME || 'csgo',
-  gameType: process.env.SRCDS_GAMETYPE || '1',
-  gameMode: process.env.SRCDS_GAMEMODE || '2',
-  gslt: process.env.SRCDS_GSLT || '',
-  wsapikey: process.env.SRCDS_WSAPIKEY || '',
-};
+// Do we auto update?
+const autoUpdate = process.env.SRCDS_AUTOUPDATE || 'true';
 
-const srcdsCommandLine = [
-  `-usercon`,
-  `-nobreakpad`,
-  `-ip ${srcdsConfig.ip}`,
-  `-port ${srcdsConfig.port}`,
-  `-game ${srcdsConfig.game}`,
-  `-nohltv`,
-  `-tickrate ${srcdsConfig.tickrate}`,
-  `-maxplayers_override ${srcdsConfig.maxPlayers}`,
-  `-authkey ${srcdsConfig.wsapikey}`,
-  `+map ${srcdsConfig.startupMap}`,
-  `+servercfgfile ${srcdsConfig.serverCfgFile}`,
-  `+game_type ${srcdsConfig.gameType}`,
-  `+game_mode ${srcdsConfig.gameMode}`,
-  `+sv_setsteamaccount ${srcdsConfig.gslt}`,
-];
+// Steamcmd proxy
+const httpProxy = process.env.SRCDS_HTTP_PROXY || '';
 
-const redisConfig = {
-  port: redisPort,
-  host: redisHost,
-  password: redisPassword,
-  db: redisDB,
-}
+// Force a validation of game files when starting/updating
+const forceValidate = process.env.SRCDS_FORCE_VALIDATE || 'false';
 
-const redis = new Redis(redisConfig)
-const redisSub = new Redis(redisConfig)
-const redisLockClient = new Redis(redisConfig)
+// Websocket token
+const staticWSToken = process.env.SRCDS_WS_STATIC_TOKEN || crypto.randomBytes(128).toString('base64');
 
-// RedLock client
-const redisLock = new Redlock([redisLockClient], {
-  retryCount: 2,
-  retryDelay: 5000,
-  retryJitter: 1000,
-});
+// Locking - not strictly necessary, but nice to have
+var lock = new Lock();
 
+// Placeholder for our child
+// TODO: don't think we need this here
+var srcdsChild = undefined;
+
+// Flags
 var shutdownInProgress = false;
 var updateInProgress = false;
 
-var stdin = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-});
+// Streams to pipe up the websocket to srcds / steamcmd
+const ws2srcdsPipe = new Stream.Readable();
+ws2srcdsPipe._read = () => {};
 
-redis.on('connect', (message) => {
-  console.log('connect event caught');
-});
+const srcds2wsPipe = new Stream.Readable();
+srcds2wsPipe._read = () => {};
 
-redis.on('error', (message) => {
-  console.log('error event caught');
-  clog.error(message);
-});
+// Regex to match output of 'stats' command
+//const statsRegex = new RegExp('(?:^|\n)\s*((?:[\d\.]+\s*){10})(?:$|\n)');
 
-redis.on('wait', (message) => {
-  console.log('wait event caught');
-});
+const statsRegex = /(?:^|\n)\s*((?:[\d\.]+\s*){10})(?:$|\n)/;
 
-redis.on('ready', (message) => {
-  console.log('ready event caught');
-});
+// String to look for to run update
+// Specified as a literal instead of a regex
+const updateRequiredString = 'MasterRequestRestart\r\nYour server needs to be restarted in order to receive the latest update.\r\n';
 
+//
+// End globals
 
-redisSub.on('connect', (message) => {
-  console.log('connect event caught');
-});
+//
+// EventEmitters
+// TODO there has to be a better way
+const statsEventTx = new events.EventEmitter();
+const statsEventRx = new events.EventEmitter();
 
-redisSub.on('error', (message) => {
-  console.log('error event caught');
-  clog.error(message);
-});
+//
+// SRCDS config
+const srcdsConfig = {
+  appid: '740', // Steam game ID
+  ip: '0.0.0.0', // Bind address
+  port: process.env.SRCDS_PORT || '27215', // Game port
+  tickrate: process.env.SRCDS_TICKRATE || '64', // Tickrate
+  maxPlayers: process.env.SRCDS_MAXPLAYERS || '20', // Maximum number of players
+  startupMap: process.env.SRCDS_STARTUPMAP || 'de_nuke', // Startup map
+  serverCfgFile: process.env.SRCDS_SERVERCFGFILE || 'server.cfg', // Main server configuration file
+  game: process.env.SRCDS_GAME || 'csgo', // Mod name
+  gameType: process.env.SRCDS_GAMETYPE || '1', // Game type
+  gameMode: process.env.SRCDS_GAMEMODE || '2', // Game mode
+  gslt: process.env.SRCDS_GSLT || '', // Gameserver Login Token
+  wsapikey: process.env.SRCDS_WSAPIKEY || '', // Workshop API key
+  rconPassword: process.env.SRCDS_RCON_PASSWORD, // RCON Password
+  gamePassword: process.env.SRCDS_GAME_PASSWORD, // Game password
+  allowEmptyGamePassword: process.env.SRCDS_PUBLIC || false, // Allow empty game password?
+  fastDLUrl: new URL(process.env.SRCDS_FASTDLURL).toString() || '', // FastDL server
+  fakeStale: process.env.SRCDS_DEBUG_FAKE_STALE || false,
+};
 
-redisSub.on('wait', (message) => {
-  console.log('wait event caught');
-});
-
-redisSub.on('ready', (message) => {
-  console.log('ready event caught');
-});
-
-
-redisLockClient.on('connect', (message) => {
-  console.log('connect event caught');
-});
-
-redisLockClient.on('error', (message) => {
-  console.log('error event caught');
-  clog.error(message);
-});
-
-redisLockClient.on('wait', (message) => {
-  console.log('wait event caught');
-});
-
-redisLockClient.on('ready', (message) => {
-  console.log('ready event caught');
-});
-
-if (debug) clog.debug('process.env', process.env);
-if (debug) clog.debug('SRCDS config', srcdsConfig);
-if (debug) clog.debug('SRCDS command line', srcdsCommandLine);
-
-const initDownloaderCheck = await redis.get('downloaderAvailable');
-if (debug) clog.debug('initDownloaderCheck', initDownloaderCheck);
-
-var lockRenewInterval = null;
-
-// Check to see if the lock exists
-if (debug) clog.debug(`Checking for lock on ${ident}:srcdsLock`);
-const lockCheck = await redis.get(`${ident}:srcdsLock`);
-if (debug) clog.debug("Variable 'lockCheck'", lockCheck);
-if (lockCheck) {
-  // We shouldn't reach this point unless something is wrong
-  // So we throw
-  throw new Error('Locked');
-} else {
-  // Acquire our lock
-  if (debug) clog.debug(`Attempting to acquire lock on ${ident}:srcdsLock`);
-  const lock = await redisLock.lock(`${ident}:srcdsLock`, 60000);
-  if (debug) clog.debug('Lock acquired');
-  console.log(`Lock acquired on ${ident}:srcdsLock`);
-  // Setup an interval to renew running instance flags
-  renewInstanceInfo(60000);
-  lockRenewInterval = setInterval(() => {
-    if (debug) clog.debug('Extending lock');
-    lock.extend(60000);
-    renewInstanceInfo(60000);
-  }, 30000); // Renew in 30 seconds
-
-  // Check update status
-  const updateStatus = await checkWaitUpdate();
-  clog.debug(updateStatus);
-  if (updateStatus === 'error') {
-    //await lock.unlock();
-    //if (errorAction === 'throw') throw new Error(`updateStatus in invalid state: ${updateStatus}`);
-    //clog.error(`updateStatus in invalid state: ${updateStatus}`);
-    await waitUpdateStatus();
-    await spawnSrcds(lock);
-  } else if (updateStatus === 'waiting' || updateStatus === 'running') {
-    await waitUpdateStatus();
-    await spawnSrcds(lock);
-  } else if (updateStatus === 'notRequired' || updateStatus === 'complete') {
-    // Spawn srcds
-    await spawnSrcds(lock);
-  }
+// If no rcon password was supplied, set one now (can be changed later in cfg files)
+if (srcdsConfig.rconPassword === '') {
+  srcdsConfig.rconPassword = crypto.randomBytes(24).toString('base64');
+  console.log(`[${timestamp()}]  No RCON password provided at startup, set to ${srcdsConfig.rconPassword}`);
 }
 
-async function renewInstanceInfo(time) {
-  time = time || 60000; // Default to 60 seconds
-  var ttl = new Date();
-  ttl = new Date(ttl.getTime() + time).getTime();
-  if (debug) clog.debug('Renewing instance info');
-  await redis.zadd('requiredAppIDs', ttl, srcdsConfig.appid);
-  await redis.zadd(`${srcdsConfig.appid}:instances`, ttl, ident);
+// If no game password was supplied at startup, set one now (can be changed in cfg files)
+// If both the password is empty and allowEmptyGamePassword, allow a blank game password at startup (can be changed later in cfg files)
+if (srcdsConfig.gamePassword === '' && srcdsConfig.allowEmptyGamePassword === 'true') {
+  console.log(
+    `[${timestamp()}]  No Game password provided at startup and AllowEmptyGamePassword is true, server is publicly accessible!`,
+  );
+} else if (srcdsConfig.gamePassword === '') {
+  srcdsConfig.gamePassword = crypto.randomBytes(24).toString('base64');
+  console.log(`[${timestamp()}]  No Game password provided at startup, set to ${srcdsConfig.gamePassword}`);
 }
 
-async function renewRunningInstanceInfo(time) {
-  time = time || 60000; // Default to 60 seconds
-  var ttl = new Date();
-  ttl = new Date(ttl.getTime() + time).getTime();
-  if (debug) clog.debug('Renewing running instance info');
-  await redis.zadd(`${srcdsConfig.appid}:runningInstances`, ttl, ident);
-}
+// Build the srcds command line
+const srcdsCommandLine = [
+  srcdsConfig.fakeStale ? '-fake_stale_server' : '',
+  '-usercon', // Enable rcon
+  '-norestart', // We handle restarts ourselves
+  `-ip ${srcdsConfig.ip}`, // Bind ip
+  `-port ${srcdsConfig.port}`, // Bind port
+  `-game ${srcdsConfig.game}`, // Mod name
+  `-nohltv`, // Disable HLTV
+  `-tickrate ${srcdsConfig.tickrate}`, // Tickrate
+  `-maxplayers_override ${srcdsConfig.maxPlayers}`, // Maxplayers
+  `-authkey ${srcdsConfig.wsapikey}`, // Workshop api key
+  `+map ${srcdsConfig.startupMap}`, // Startup map
+  `+servercfgfile ${srcdsConfig.serverCfgFile}`, // Main server configuration file
+  `+game_type ${srcdsConfig.gameType}`, // Game type
+  `+game_mode ${srcdsConfig.gameMode}`, // Game mode
+  `+sv_setsteamaccount "${srcdsConfig.gslt}"`, // GSLT
+  `+rcon_password "${srcdsConfig.rconPassword}"`, // RCON password
+  `+sv_password "${srcdsConfig.gamePassword}"`, // Game password
+  `+sv_downloadurl "\\"${srcdsConfig.fastDLUrl}\\""`, // FastDL url
+  `+hostname "${ident}`, // Set the hostname at startup - can be overridden by config files later
+];
 
-async function checkWaitUpdate(force) {
-  const downloaderAvailable = await redis.get('downloaderAvailable');
-  if (debug) clog.debug('downloaderAvailable', downloaderAvailable);
-  if (downloaderAvailable === 'true') {
-    if (force) {
-      // Don't bother checking updateStatus flag
-      if (debug) clog.debug('Publishing updateRequestEvent');
-      console.log(`Requesting an update for appid ${srcdsConfig.appid}`);
-      redis.publish(
-        'updateRequestEvent',
-        JSON.stringify({
-          appid: srcdsConfig.appid,
-        }),
-      );
-      return await waitUpdateStatus();
-    } else {
-      const updateStatus = await redis.get(`${srcdsConfig.appid}:updateStatus`);
-      if (debug) clog.debug('updateStatus', updateStatus);
-      if (updateStatus === 'notRequired') {
-        return 'notRequired';
-      } else if (updateStatus === 'running' || updateStatus === 'waiting') {
-        return await waitUpdateStatus();
+// Some debug statements
+// if (debug) clog.debug('process.env', process.env);
+// if (debug) clog.debug('SRCDS config', srcdsConfig);
+// if (debug) clog.debug('SRCDS command line', srcdsCommandLine);
+
+//
+// End srcds config
+
+//
+// Setup monitoring
+const prometheusRegistry = new prometheus.Registry();
+const metrics = {
+  status: new prometheus.Gauge({
+    name: 'srcds_status',
+    help: "The server's status, 0 = offline/bad password, 1 = online",
+    registers: [prometheusRegistry],
+  }),
+  cpu: new prometheus.Gauge({
+    name: 'srcds_cpu',
+    help: 'CPU usage',
+    registers: [prometheusRegistry],
+  }),
+  netin: new prometheus.Gauge({
+    name: 'srcds_netin',
+    help: 'Incoming bandwidth, in kbps, received by the server',
+    registers: [prometheusRegistry],
+  }),
+  netout: new prometheus.Gauge({
+    name: 'srcds_netout',
+    help: 'Incoming bandwidth, in kbps, sent by the server',
+    registers: [prometheusRegistry],
+  }),
+  uptime: new prometheus.Gauge({
+    name: 'srcds_uptime',
+    help: "The server's uptime, in minutes",
+    registers: [prometheusRegistry],
+  }),
+  maps: new prometheus.Gauge({
+    name: 'srcds_maps',
+    help: "The number of maps played on that server since it's start",
+    registers: [prometheusRegistry],
+  }),
+  fps: new prometheus.Gauge({
+    name: 'srcds_fps',
+    help: "The server's tick (10 fps on idle, 64 fps for 64 ticks server, 128 fps for 128 ticks..)",
+    registers: [prometheusRegistry],
+  }),
+  players: new prometheus.Gauge({
+    name: 'srcds_players',
+    help: 'The number of real players actually connected on the server',
+    registers: [prometheusRegistry],
+  }),
+  svms: new prometheus.Gauge({
+    name: 'srcds_svms',
+    help: 'The ms per sim frame',
+    registers: [prometheusRegistry],
+  }),
+  varms: new prometheus.Gauge({
+    name: 'srcds_varms',
+    help: 'The ms/frame variance',
+    registers: [prometheusRegistry],
+  }),
+  tick: new prometheus.Gauge({
+    name: 'srcds_tick',
+    help: 'The time in MS per tick',
+    registers: [prometheusRegistry],
+  }),
+};
+
+prometheusRegistry.setDefaultLabels({
+  ident: ident,
+  appid: srcdsConfig.appid,
+});
+
+// End monitoring setup
+
+//
+// Setup express
+var expressApp = express();
+var expressWs = expressWS(expressApp, null, {
+  wsOptions: {
+    verifyClient: (info, callback) => {
+      const token = info.req.headers['statictoken'];
+      if (auth(token)) {
+        return callback(true);
       } else {
-        // Status is invalid, req an update
-        if (debug) clog.debug('Publishing updateRequestEvent');
-        console.log(`Requesting an update for appid ${srcdsConfig.appid}`);
-        redis.publish(
-          'updateRequestEvent',
-          JSON.stringify({
-            appid: srcdsConfig.appid,
-          }),
-        );
-        return await waitUpdateStatus();
+        return callback(false, 401, 'Unauthorized');
       }
-    }
-  } else {
-    // Subscribe to downloaderAvailableEvent
-    await waitDownloaderAvailable();
-    const updateStatus = await redis.get(`${srcdsConfig.appid}:updateStatus`);
-    if (debug) clog.debug('updateStatus', updateStatus);
-    if (updateStatus === 'notRequired') {
-      console.log(`${appid} already up to date, continuing`);
-      return 'notRequired';
-    } else if (updateStatus === 'running' || updateStatus === 'waiting') {
-      console.log(`Update for ${srcdsConfig.appid} already in progress, waiting`);
-      return await waitUpdateStatus();
+    },
+  },
+});
+
+expressApp.use((request, response, next) => {
+  // clog.debug('ExpressApp Request', request);
+  return next();
+});
+
+// We declare this as a var here so we can shutdown the connection when srcds exits
+const expressServer = expressApp.listen(3000);
+
+expressApp.get('/metrics', (request, response) => {
+  statsEventTx.emit('request', null);
+  statsEventRx.on('complete', async () => {
+    const toSend = await prometheusRegistry.metrics();
+    // if (debug) clog.debug('send metrics', toSend);
+    response.send(toSend);
+    statsEventRx.removeAllListeners();
+  });
+});
+
+// Setup the websocket for console
+// We "hide" the route as /ws/${ident}
+// Keeps it from being hit by bots at least
+// And of course we auth it up above
+expressApp.ws('/', (websocket, request) => {
+  const srcIP = request.headers['x-forwarded-for'] || request.socket.remoteAddress;
+  console.log(`[${timestamp()}]  [websocket console] Connected from IP ${srcIP}`);
+  websocket.on('message', (message) => {
+    // Take incoming websocket messages and dump them to srcdsChild
+    console.error('Websocket message: ' + message.toString());
+    ws2srcdsPipe.push(message.toString() + '\r\n');
+    // srcdsChild.write(`${message}\n`);
+  });
+
+  // Take incoming stdout from srcdsChild and dump it to the websocket
+  srcds2wsPipe.on('data', (data) => {
+    data = data.toString();
+    websocket.send(data);
+  });
+
+  // srcdsChild.onData((data) => {
+  //   data = data.toString();
+  //   websocket.send(data);
+  // });
+  websocket.on('close', () => {
+    websocket.removeAllListeners();
+  });
+});
+
+//
+// End setup
+
+//
+// Begin logic
+// First, check for updates
+metrics.status.set(Number(0));
+updateValidate(srcdsConfig.appid)
+  .then((result) => {
+    // If steamcmd didn't shit the bed, continue
+    if (result != 'error') {
+      // Start srcds
+      spawnSrcds();
     } else {
-      // Status is invalid, req an update
-      if (debug) clog.debug('Publishing updateRequestEvent');
-      console.log(`Requesting an update for appid ${srcdsConfig.appid}`);
-      redis.publish(
-        'updateRequestEvent',
-        JSON.stringify({
-          appid: srcdsConfig.appid,
-        }),
-      );
-      return await waitUpdateStatus();
+      // If steamcmd died, bail out now
+      throw new Error(`Update in state ${result}`);
     }
+    return;
+  })
+  .catch((error) => {
+    // If checkApplyUpdate throws, bail the fuck out
+    throw new Error(error);
+  });
+
+process.on('SIGINT', () => {
+  console.error('SIGINT');
+});
+
+//
+// Functions
+
+//
+// Auth
+// Very basic for now
+function auth(token) {
+  if (typeof token === undefined || !token || token.length === 0) {
+    return false;
+  } else if (crypto.timingSafeEqual(Buffer.from(token), Buffer.from(staticWSToken))) {
+    return true;
+  } else {
+    return false;
   }
 }
 
-function waitUpdateStatus() {
-  return new Promise((resolve, reject) => {
-    redisSub.subscribe(`${srcdsConfig.appid}:updateStatusEvent`);
-    redisSub.on('message', (channel, message) => {
-      if (channel === `${srcdsConfig.appid}:updateStatusEvent`) {
-        if (message === 'complete') {
-          redisSub.unsubscribe(`${srcdsConfig.appid}:updateStatusEvent`);
-          return resolve('complete');
-        } else if (message === 'error') {
-          redisSub.unsubscribe(`${srcdsConfig.appid}:updateStatusEvent`);
-          return resolve('error');
-        }
-      }
+//
+// Spawn SRCDS
+// Handle sigterm while it's running
+// Forward container stdin to srcds
+// Handle automatic updates
+// Automatically restart srcds
+// TODO: do we want to do that? or allow nomad to restart container for us?
+// Cleanup when shutdown is in progress
+// Listen on a websocket for console
+function spawnSrcds() {
+  const gameLockStatus = lock.isBusy('game');
+  const updateLockStatus = lock.isBusy('update');
+  if (gameLockStatus) {
+    // Locked somehow, bail out early
+    throw new Error(`Locked: Game ${gameLockStatus}; Update ${updateLockStatus}`);
+  } else {
+    // Spawn srcds
+
+    if (debug) clog.debug(`Spawning srcds at ${serverFilesDir}/srcds_linux with options`, srcdsCommandLine);
+
+    console.log(`[${timestamp()}]  Spawning srcds at ${serverFilesDir}/srcds_linux:`);
+    srcdsChild = pty.spawn(`${serverFilesDir}/srcds_linux`, srcdsCommandLine, {
+      handleFlowControl: true,
+      cwd: serverFilesDir,
+      env: {
+        LD_LIBRARY_PATH: `${serverFilesDir}:${serverFilesDir}/bin`,
+        PATH: `${steamcmdDir}:${serverFilesDir}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`,
+        HOME: homeDir,
+        SRCDS_DIR: serverFilesDir,
+        PWD: serverFilesDir,
+      },
     });
-  });
-}
 
-function waitDownloaderAvailable() {
-  return new Promise((resolve, reject) => {
-    redisSub.subscribe('downloaderAvailableEvent');
-    redisSub.on('message', (channel, message) => {
-      if (channel === 'downloaderAvailableEvent') {
-        if (message === 'true') {
-          redisSub.unsubscribe('downloaderAvailableEvent');
-          return resolve('complete');
-        }
-      }
+    metrics.status.set(Number(1));
+
+    ws2srcdsPipe.on('data', (data) => {
+      data = data.toString();
+
+      console.log(`[${timestamp()}]  [websocket console] ${data}`);
+      srcdsChild.write(data);
     });
-  });
-}
 
-async function spawnSrcds(lock) {
-  const runningInstanceRenewInterval = setInterval(() => {
-    renewRunningInstanceInfo(60000);
-  }, 30000);
-  // Spawn srcds
-  if (debug) clog.debug(`Spawning srcds at ${serverFilesDir}/srcds_linux with options`, srcdsCommandLine);
-  const srcds = pty.spawn(`${serverFilesDir}/srcds_run`, srcdsCommandLine, {
-    handleFlowControl: true,
-    cwd: serverFilesDir,
-    env: {
-      LD_LIBRARY_PATH: `${serverFilesDir}:${serverFilesDir}/bin`,
-      PATH: `${steamcmdDir}:${serverFilesDir}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`,
-      HOME: homeDir,
-      SRCDS_DIR: serverFilesDir,
-      PWD: serverFilesDir,
-    },
-  });
+    statsEventTx.on('request', () => {
+      srcdsChild.write('stats\r\n');
+    });
 
-  stdin.on('line', (line) => {
-    srcds.write(`${line}\r\n`);
-  });
-
-  // Watch stdout for update notifications
-  srcds.onData(async (data) => {
-    data = data.toString();
-    console.log(data);
-    if (data.includes('MasterRequestRestart')) {
-      console.log('\n\nServer update required\n\n');
-      console.log('\n\nServer will restart for update automatically, please wait\n\n');
-      if (isTrustedUpdateSource) {
-        redis.publish(
-          'updateRequestEvent',
-          JSON.stringify({
-            appid: srcdsConfig.appid,
-          }),
-        );
+    // Forward stdout from srcds to our own
+    srcdsChild.onData((data) => {
+      data = data.toString();
+      // If we see "MasterRequestRestart" and autoupdate is enabled, trigger an update
+      // eslint-disable-next-line prettier/prettier
+      if (data === updateRequiredString && autoUpdate === 'true' && updateInProgress === false) {
+        updateInProgress = true;
+        console.log(`\n\n[${timestamp()}]  Server update required\n\n`);
+        console.log(`\n\n[${timestamp()}]  Server will restart for update in 30 seconds\r\n\r\n`);
+        srcdsChild.write(`\r\n\r\nsay Server update required\n\n`, 'utf8');
+        srcdsChild.write(`\r\n\r\nsay Server will restart for update in 30 seconds\r\n\r\n`, 'utf8');
+        setTimeout(() => {
+          shutdownSrcds(srcdsChild, 'UPDATE')
+            .then((exitcode) => {
+              return;
+            })
+            .catch((error) => {
+              throw error;
+            });
+        }, 30000); // 30 seconds
       }
-    }
-  });
 
-  srcds.onExit(async (exit) => {
-    if (shutdownInProgress) {
-      if (debug) clog.debug('srcds exited with code', exit);
-      await renewRunningInstanceInfo(0); // Expire it now
-      await lock.unlock();
-      redisSub.unsubscribe(`${srcdsConfig.appid}:shutdownRequiredEvent`);
-      clearInterval(runningInstanceRenewInterval);
-      srcds.removeAllListeners();
-      stdin.removeAllListeners();
-      stdin.close();
-      shutdownRedis(1000);
-    } else if (updateInProgress) {
-      if (debug) clog.debug('srcds exited with code', exit);
-      await renewRunningInstanceInfo(0); // Expire it now
-      redisSub.unsubscribe(`${srcdsConfig.appid}:shutdownRequiredEvent`);
-      clearInterval(runningInstanceRenewInterval);
-      srcds.removeAllListeners();
-      stdin.removeAllListeners();
-    } else {
-      if (debug) clog.debug('srcds exited with code', exit);
-      await renewRunningInstanceInfo(0); // Expire it now
-      redisSub.unsubscribe(`${srcdsConfig.appid}:shutdownRequiredEvent`);
-      srcds.removeAllListeners();
-      stdin.removeAllListeners();
-      clearInterval(runningInstanceRenewInterval);
-      await spawnSrcds(lock);
-    }
-  });
+      var parsedStats = data.match(statsRegex);
+      if (parsedStats) {
+        parsedStats = parsedStats[0].split(/\s+/);
+        // TODO drop the first and last elements, adjust below as necessary
+        clog.debug('parsed stats', parsedStats);
+        metrics.status.set(Number(1));
+        metrics.cpu.set(Number(parsedStats[1]));
+        metrics.netin.set(Number(parsedStats[2]));
+        metrics.netout.set(Number(parsedStats[3]));
+        metrics.uptime.set(Number(parsedStats[4]));
+        metrics.maps.set(Number(parsedStats[5]));
+        metrics.fps.set(Number(parsedStats[6]));
+        metrics.players.set(Number(parsedStats[7]));
+        metrics.svms.set(Number(parsedStats[8]));
+        metrics.varms.set(Number(parsedStats[9]));
+        metrics.tick.set(Number(parsedStats[10]));
+        statsEventRx.emit('complete', null);
+      }
 
-  redisSub.subscribe(`${srcdsConfig.appid}:shutdownRequiredEvent`);
-  redisSub.on('message', async (channel, message) => {
-    if (channel === `${srcdsConfig.appid}:shutdownRequiredEvent`) {
-      updateInProgress = true;
-      await shutdownSrcds(srcds, message);
-      await waitUpdateStatus();
-      updateInProgress = false;
-      spawnSrcds(lock);
-    }
-  });
+      console.log(`[${timestamp()}]  ${data}`);
+      srcds2wsPipe.push(data);
+    });
 
-  process.on('SIGTERM', async () => {
-    if (debug) clog.debug('SIGTERM received, shutting down');
-    await shutdownSrcds(srcds, 'SIGTERM');
-    clearInterval(runningInstanceRenewInterval);
-  });
+    // When srcds exits
+    srcdsChild.onExit((exit) => {
+      console.log(
+        `\n\n[${timestamp()}]  srcds_linux exited with code ${exit.exitCode} because of signal ${exit.signal}\n\n`,
+      );
+      // Do some cleanup
+      srcdsChild.removeAllListeners();
+      // Wait 5 seconds
+      setTimeout(() => {
+        // If we're shutting down, no-op and exit (other sigterm handler will finish cleanup for us)
+        if (shutdownInProgress) {
+          expressServer.close();
+          return;
+        } else {
+          // Otherwise, check for an update and restart srcds
+          updateValidate(srcdsConfig.appid)
+            .then((result) => {
+              spawnSrcds();
+              return;
+            })
+            .catch((error) => {
+              throw error;
+            });
+        }
+      }, 5000);
+    });
 
-  return srcds;
+    // Initial sigterm handler
+    // Set shutdownInProgress flag
+    // Shutdown srcds cleanly
+    process.on('SIGTERM', () => {
+      console.log(`\n\n[${timestamp()}]  SIGTERM received, shutting down \n\n`);
+      shutdownInProgress = true;
+      shutdownSrcds(srcdsChild, 'SIGTERM')
+        .then((exitCode) => {
+          return;
+        })
+        .catch((error) => {
+          throw error;
+        });
+    });
+    return srcdsChild;
+  }
 }
 
-function shutdownSrcds(srcds, reason) {
-  if (srcds) {
-    return new Promise((resolve, reject) => {
+// Shutdown SRCDS
+// srcdsChild MUST be typeof child_process
+function shutdownSrcds(srcdsChild, reason) {
+  return new Promise((resolve, reject) => {
+    if (srcdsChild) {
       reason = reason || 'unknown';
       // Prepare a sigkill if srcds doesn't exit within 10 seconds
+      // TODO: implement this? nomad will sigkill us in 5 seconds (configurable?)
       // Ask SRCDS to exit cleanly
       // First 'say' and 'echo' the date the command was received
-      srcds.write(`\n\nsay 'quit' command received at ${new Date().toTimeString()} [${reason}]\n\n`, 'utf8');
+
+      srcdsChild.write(`\r\n\r\nsay 'quit' command received at ${timestamp()} [${reason}]\r\n\r\n`, 'utf8');
       // Then send the 'quit' command
-      srcds.write('\n\nquit\n\n');
-      srcds.onExit(async (exit) => {
-        await renewRunningInstanceInfo(0);
+      srcdsChild.write('\r\n\r\nquit\r\n\r\n');
+      srcdsChild.onExit((exit) => {
+        srcdsChild = undefined;
         return resolve(exit);
       });
+    } else {
+      clog.error('shutdownSrcds called with no child!');
+      return reject(new Error('Parameter srcdsChild required'));
+    }
+  });
+}
+
+// Spawn steamcmd to check/apply/validate updates
+// TODO: allow dynamic assignment of forceValidate
+function updateValidate(appid) {
+  return new Promise((resolve, reject) => {
+    console.log(`[${timestamp()}]  Checking for update`);
+    if (debug) clog.debug(`updateValidate(${appid})`);
+    console.log(`[${timestamp()}]  Spawning steamcmd to check/validate ${appid}`);
+    // Setup the steamcmd command line
+    const installDir = path.normalize(serverFilesDir);
+    var steamcmdCommandLine = [];
+    // Is forceValidate set?
+    // TODO: make this dynamic
+    if (forceValidate === 'true') {
+      if (debug) clog.debug('forceValidate true, forcing validation');
+
+      console.log(`[${timestamp()}]  Forcing validation`);
+      steamcmdCommandLine = [
+        `+force_install_dir "${installDir}"`,
+        `+login anonymous`,
+        `+app_update ${appid} validate`,
+        `+quit`,
+      ];
+    } else {
+      // eslint-disable-next-line prettier/prettier
+      steamcmdCommandLine = [
+        `+force_install_dir "${installDir}"`,
+        `+login anonymous`,
+        `+app_update ${appid}`,
+        `+quit`,
+      ];
+    }
+
+    // Spawn steamcmd
+
+    console.log(`[${timestamp()}]  Spawning steamcmd to update/validate`);
+    const steamcmdChild = pty.spawn(`${steamcmdDir}/steamcmd.sh`, steamcmdCommandLine, {
+      handleFlowControl: true,
+      cwd: steamcmdDir,
+      env: {
+        LD_LIBRARY_PATH: `${steamcmdDir}/linux32`,
+        http_proxy: httpProxy,
+      },
     });
-  } else {
-    return 0;
-  }
+
+    // Handle SIGTERM when steamcmd is running
+    process.on('SIGTERM', () => {
+      steamcmdChild.kill('SIGTERM');
+    });
+
+    // When steamcmd outputs, output it to console
+    steamcmdChild.onData((data) => {
+      data = data.toString().replace('\r\n', '\n');
+
+      console.log(`[${timestamp()}]  ${data}`);
+      srcds2wsPipe.push(data);
+    });
+
+    // When steamcmd is done, return the exitcode
+    steamcmdChild.onExit((code) => {
+      console.log(`[${timestamp()}]  Steamcmd exited with code ${code.exitCode} because of signal ${code.signal}`);
+      if (code.exitCode === 0) {
+        updateInProgress = false;
+        return resolve('complete');
+      } else {
+        return reject(new Error(`SteamCMD exited with code ${code.exitCode}`));
+      }
+    });
+  });
 }
 
-function shutdownRedis(time) {
-  setTimeout(() => {
-    console.log('Shutting down redis clients');
-    redis.quit();
-    redisSub.unsubscribe();
-    redisSub.removeAllListeners();
-    redisSub.quit();
-    redisLockClient.quit();
-  }, time);
+function timestamp() {
+  var now = new Date();
+  now = now.toUTCString();
+  return now;
 }
-
-process.on('SIGTERM', async () => {
-  if (debug) clog.debug('SIGTERM received, shutting down');
-  shutdownInProgress = true;
-  clearInterval(lockRenewInterval);
-  await renewRunningInstanceInfo(0);
-  await renewInstanceInfo(0);
-  process.removeAllListeners();
-  setTimeout(() => {
-    shutdownRedis(0);
-  }, 10000).unref();
-});
