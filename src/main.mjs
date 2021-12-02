@@ -66,9 +66,10 @@ ws2srcdsPipe._read = () => {};
 const srcds2wsPipe = new Stream.Readable();
 srcds2wsPipe._read = () => {};
 
-// Regex to match output of 'stats' command
-//const statsRegex = new RegExp('(?:^|\n)\s*((?:[\d\.]+\s*){10})(?:$|\n)');
+// Print output from 'stats' command
+const printStatsOutput = process.env.SRCDS_PRINT_STATS || false;
 
+// Regex to match output of 'stats' command
 const statsRegex = /(?:^|\n)\s*((?:[\d\.]+\s*){10})(?:$|\n)/;
 
 // String to look for to run update
@@ -228,8 +229,7 @@ var expressApp = express();
 var expressWs = expressWS(expressApp, null, {
   wsOptions: {
     verifyClient: (info, callback) => {
-      const token = info.req.headers['statictoken'];
-      if (auth(token)) {
+      if (auth(info.req.headers['X-HonkHost-Websocket-Token'])) {
         return callback(true);
       } else {
         return callback(false, 401, 'Unauthorized');
@@ -239,8 +239,11 @@ var expressWs = expressWS(expressApp, null, {
 });
 
 expressApp.use((request, response, next) => {
-  // clog.debug('ExpressApp Request', request);
-  return next();
+  if (auth(request.headers['X-HonkHost-Websocket-Token'])) {
+    return next();
+  } else {
+    response.status(401).send('Unauthorized');
+  }
 });
 
 // We declare this as a var here so we can shutdown the connection when srcds exits
@@ -414,6 +417,10 @@ function spawnSrcds() {
         metrics.varms.set(Number(parsedStats[9]));
         metrics.tick.set(Number(parsedStats[10]));
         statsEventRx.emit('complete', null);
+        if (printStatsOutput) {
+          console.log(`[${timestamp()}]  ${data}`);
+          srcds2wsPipe.push(data);
+        }
       } else {
         console.log(`[${timestamp()}]  ${data}`);
         srcds2wsPipe.push(data);
