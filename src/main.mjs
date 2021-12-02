@@ -398,7 +398,8 @@ function spawnSrcds() {
       }
 
       var parsedStats = data.match(statsRegex);
-      if (parsedStats || data === 'stats') {
+      var isStatsCommand = data.match(/stats\s+/);
+      if (parsedStats || isStatsCommand) {
         parsedStats = parsedStats[0].split(/\s+/);
         // TODO drop the first and last elements, adjust below as necessary
         metrics.status.set(Number(1));
