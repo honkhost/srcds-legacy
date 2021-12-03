@@ -70,10 +70,12 @@ srcds2wsPipe._read = () => {};
 const printStatsOutput = process.env.SRCDS_PRINT_STATS || false;
 
 // Regex to match output of 'stats' command
+// eslint-disable-next-line no-useless-escape,security/detect-unsafe-regex
 const statsRegex = /(?:^|\n)\s*((?:[\d\.]+\s*){10})(?:$|\n)/;
 
 // String to look for to run update
 // Specified as a literal instead of a regex
+// eslint-disable-next-line prettier/prettier
 const updateRequiredString = 'MasterRequestRestart\r\nYour server needs to be restarted in order to receive the latest update.\r\n';
 
 //
@@ -226,7 +228,7 @@ prometheusRegistry.setDefaultLabels({
 //
 // Setup express
 var expressApp = express();
-var expressWs = expressWS(expressApp, null, {
+expressWS(expressApp, null, {
   wsOptions: {
     verifyClient: (info, callback) => {
       const token = info.req.headers['x-honkhost-instance-token'];
@@ -394,7 +396,7 @@ function spawnSrcds() {
         srcdsChild.write(`\r\n\r\nsay Server will restart for update in 30 seconds\r\n\r\n`, 'utf8');
         setTimeout(() => {
           shutdownSrcds(srcdsChild, 'UPDATE')
-            .then((exitcode) => {
+            .then(() => {
               return;
             })
             .catch((error) => {
@@ -450,7 +452,7 @@ function spawnSrcds() {
         } else {
           // Otherwise, check for an update and restart srcds
           updateValidate(srcdsConfig.appid)
-            .then((result) => {
+            .then(() => {
               spawnSrcds();
               return;
             })
@@ -468,7 +470,7 @@ function spawnSrcds() {
       console.log(`\n\n[${timestamp()}]  SIGTERM received, shutting down \n\n`);
       shutdownInProgress = true;
       shutdownSrcds(srcdsChild, 'SIGTERM')
-        .then((exitCode) => {
+        .then(() => {
           return;
         })
         .catch((error) => {
