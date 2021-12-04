@@ -69,7 +69,7 @@ const srcds2wsPipe = new Stream.Readable();
 srcds2wsPipe._read = () => {};
 
 // Print output from 'stats' command
-const printStatsOutput = process.env.SRCDS_PRINT_STATS || false;
+var printStatsOutput = process.env.SRCDS_PRINT_STATS || false;
 
 // Regex to match output of 'stats' command
 // eslint-disable-next-line no-useless-escape,security/detect-unsafe-regex
@@ -259,10 +259,12 @@ expressApp.use((request, response, next) => {
 const expressServer = expressApp.listen(3000);
 
 expressApp.get('/metrics', (request, response) => {
+  printStatsOutput = false;
   statsEventTx.emit('request', null);
   const timeOut = setTimeout(async () => {
     statsEventRx.removeAllListeners();
     response.send('');
+    printStatsOutput = true;
   }, 1000);
   statsEventRx.on('complete', async () => {
     clearTimeout(timeOut);
@@ -270,6 +272,7 @@ expressApp.get('/metrics', (request, response) => {
     // if (debug) clog.debug('send metrics', toSend);
     response.send(toSend);
     statsEventRx.removeAllListeners();
+    printStatsOutput = true;
   });
 });
 
@@ -278,8 +281,9 @@ expressApp.get('/metrics', (request, response) => {
 // Keeps it from being hit by bots at least
 // And of course we auth it up above
 expressApp.ws('/ws', (websocket, request) => {
-  const srcIP = request.headers['x-forwarded-for'] || request.socket.remoteAddress;
+  const srcIP = request.headers['forwarded'] || request.socket.remoteAddress;
   console.log(`[${timestamp()}]  [websocket console] Connected from IP ${srcIP}`);
+  // websocket.write('HTTP/1.1 200 OK\r\n');
   websocket.on('message', (message) => {
     // Take incoming websocket messages and dump them to srcdsChild
     console.error('Websocket message: ' + message.toString());
@@ -515,12 +519,18 @@ function spawnSrcds() {
       // If we're shutting down, no-op and exit (other sigterm handler will finish cleanup for us)
       if (shutdownInProgress) {
         expressServer.close();
+        statsEventTx.removeAllListeners();
+        ws2srcdsPipe.removeAllListeners();
         return;
       } else if (restartInProgress) {
         // Someone else is handling restart for us, no-op
+        statsEventTx.removeAllListeners();
+        ws2srcdsPipe.removeAllListeners();
         return;
       } else {
         // Otherwise, check for an update and restart srcds
+        statsEventTx.removeAllListeners();
+        ws2srcdsPipe.removeAllListeners();
         updateValidate(srcdsConfig.appid, false)
           .then(() => {
             spawnSrcds();
@@ -538,6 +548,8 @@ function spawnSrcds() {
     process.on('SIGTERM', () => {
       console.log(`\n\n[${timestamp()}]  SIGTERM received, shutting down \n\n`);
       shutdownInProgress = true;
+      statsEventTx.removeAllListeners();
+      ws2srcdsPipe.removeAllListeners();
       shutdownSrcds(srcdsChild, 'SIGTERM')
         .then(() => {
           return;
