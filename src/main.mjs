@@ -7,6 +7,7 @@ import { default as crypto } from 'crypto';
 import { URL } from 'url';
 import { default as Stream } from 'stream';
 import { default as events } from 'events';
+import { default as child_process } from 'child_process';
 
 // External
 import { default as clog } from 'ee-log';
@@ -126,12 +127,9 @@ if (srcdsConfig.gamePassword === '' && srcdsConfig.allowEmptyGamePassword === 't
   console.log(`[${timestamp()}]  No Game password provided at startup, set to ${srcdsConfig.gamePassword}`);
 }
 
-const sv_downloadurl = '+sv_downloadurl \\"' + srcdsConfig.fastDLUrl + '\\"';
-// foo
-
 // Build the srcds command line
 const srcdsCommandLine = [
-  srcdsConfig.fakeStale ? '-fake_stale_server' : '',
+//  srcdsConfig.fakeStale ? '-fake_stale_server' : '',
   '-usercon', // Enable rcon
   '-norestart', // We handle restarts ourselves
   `-ip ${srcdsConfig.ip}`, // Bind ip
@@ -148,7 +146,7 @@ const srcdsCommandLine = [
   `+sv_setsteamaccount "${srcdsConfig.gslt}"`, // GSLT
   `+rcon_password "${srcdsConfig.rconPassword}"`, // RCON password
   `+sv_password "${srcdsConfig.gamePassword}"`, // Game password
-  sv_downloadurl, // FastDL url
+  `+sv_downloadurl "${srcdsConfig.fastDLUrl}"`, // FastDL url
   `+hostname "${ident}"`, // Set the hostname at startup - can be overridden by config files later
 ];
 
