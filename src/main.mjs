@@ -126,6 +126,9 @@ if (srcdsConfig.gamePassword === '' && srcdsConfig.allowEmptyGamePassword === 't
   console.log(`[${timestamp()}]  No Game password provided at startup, set to ${srcdsConfig.gamePassword}`);
 }
 
+const sv_downloadurl = '+sv_downloadurl \\"' + srcdsConfig.fastDLUrl + '\\"';
+// foo
+
 // Build the srcds command line
 const srcdsCommandLine = [
   srcdsConfig.fakeStale ? '-fake_stale_server' : '',
@@ -145,10 +148,11 @@ const srcdsCommandLine = [
   `+sv_setsteamaccount "${srcdsConfig.gslt}"`, // GSLT
   `+rcon_password "${srcdsConfig.rconPassword}"`, // RCON password
   `+sv_password "${srcdsConfig.gamePassword}"`, // Game password
-  `+sv_downloadurl "\\"${srcdsConfig.fastDLUrl}\\""`, // FastDL url
-  `+hostname "${ident}`, // Set the hostname at startup - can be overridden by config files later
+  sv_downloadurl, // FastDL url
+  `+hostname "${ident}"`, // Set the hostname at startup - can be overridden by config files later
 ];
 
+// foo
 // Some debug statements
 // if (debug) clog.debug('process.env', process.env);
 // if (debug) clog.debug('SRCDS config', srcdsConfig);
