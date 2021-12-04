@@ -44,7 +44,7 @@ const autoUpdate = process.env.SRCDS_AUTOUPDATE || 'true';
 const httpProxy = process.env.SRCDS_HTTP_PROXY || '';
 
 // Force a validation of game files when starting/updating
-const forceValidate = process.env.SRCDS_FORCE_VALIDATE || 'false';
+const startupValidate = process.env.SRCDS_STARTUP_VALIDATE || false;
 
 // Websocket token
 const staticWSToken = process.env.SRCDS_WS_STATIC_TOKEN || crypto.randomBytes(128).toString('base64');
@@ -59,6 +59,7 @@ var srcdsChild = undefined;
 // Flags
 var shutdownInProgress = false;
 var updateInProgress = false;
+var restartInProgress = false;
 
 // Streams to pipe up the websocket to srcds / steamcmd
 const ws2srcdsPipe = new Stream.Readable();
@@ -127,27 +128,28 @@ if (srcdsConfig.gamePassword === '' && srcdsConfig.allowEmptyGamePassword === 't
   console.log(`[${timestamp()}]  No Game password provided at startup, set to ${srcdsConfig.gamePassword}`);
 }
 
+const escape = String.raw`"`;
+
 // Build the srcds command line
 const srcdsCommandLine = [
-//  srcdsConfig.fakeStale ? '-fake_stale_server' : '',
   '-usercon', // Enable rcon
   '-norestart', // We handle restarts ourselves
-  `-ip ${srcdsConfig.ip}`, // Bind ip
-  `-port ${srcdsConfig.port}`, // Bind port
-  `-game ${srcdsConfig.game}`, // Mod name
-  `-nohltv`, // Disable HLTV
-  `-tickrate ${srcdsConfig.tickrate}`, // Tickrate
-  `-maxplayers_override ${srcdsConfig.maxPlayers}`, // Maxplayers
-  `-authkey ${srcdsConfig.wsapikey}`, // Workshop api key
-  `+map ${srcdsConfig.startupMap}`, // Startup map
-  `+servercfgfile ${srcdsConfig.serverCfgFile}`, // Main server configuration file
-  `+game_type ${srcdsConfig.gameType}`, // Game type
-  `+game_mode ${srcdsConfig.gameMode}`, // Game mode
-  `+sv_setsteamaccount "${srcdsConfig.gslt}"`, // GSLT
-  `+rcon_password "${srcdsConfig.rconPassword}"`, // RCON password
-  `+sv_password "${srcdsConfig.gamePassword}"`, // Game password
-  `+sv_downloadurl "${srcdsConfig.fastDLUrl}"`, // FastDL url
-  `+hostname "${ident}"`, // Set the hostname at startup - can be overridden by config files later
+  '-ip', srcdsConfig.ip, // Bind ip
+  '-port', srcdsConfig.port, // Bind port
+  '-game', srcdsConfig.game, // Mod name
+  '-nohltv', // Disable HLTV
+  '-tickrate', srcdsConfig.tickrate, // Tickrate
+  '-maxplayers_override', srcdsConfig.maxPlayers, // Maxplayers
+  '-authkey', srcdsConfig.wsapikey, // Workshop api key
+  '+map', srcdsConfig.startupMap, // Startup map
+  '+servercfgfile', srcdsConfig.serverCfgFile, // Main server configuration file
+  '+game_type', srcdsConfig.gameType, // Game type
+  '+game_mode', srcdsConfig.gameMode, // Game mode
+  '+sv_setsteamaccount', srcdsConfig.gslt, // GSLT
+  '+rcon_password', srcdsConfig.rconPassword, // RCON password
+  '+sv_password', srcdsConfig.gamePassword, // Game password
+  '+hostname', ident, // Set the hostname at startup - can be overridden by config files later
+  // '+sv_downloadurl', escape + srcdsConfig.fastDLUrl + escape, // FastDL url
 ];
 
 // foo
@@ -258,7 +260,12 @@ const expressServer = expressApp.listen(3000);
 
 expressApp.get('/metrics', (request, response) => {
   statsEventTx.emit('request', null);
+  const timeOut = setTimeout(async () => {
+    statsEventRx.removeAllListeners();
+    response.send('');
+  }, 1000);
   statsEventRx.on('complete', async () => {
+    clearTimeout(timeOut);
     const toSend = await prometheusRegistry.metrics();
     // if (debug) clog.debug('send metrics', toSend);
     response.send(toSend);
@@ -270,7 +277,7 @@ expressApp.get('/metrics', (request, response) => {
 // We "hide" the route as /ws/${ident}
 // Keeps it from being hit by bots at least
 // And of course we auth it up above
-expressApp.ws('/', (websocket, request) => {
+expressApp.ws('/ws', (websocket, request) => {
   const srcIP = request.headers['x-forwarded-for'] || request.socket.remoteAddress;
   console.log(`[${timestamp()}]  [websocket console] Connected from IP ${srcIP}`);
   websocket.on('message', (message) => {
@@ -302,7 +309,7 @@ expressApp.ws('/', (websocket, request) => {
 // Begin logic
 // First, check for updates
 metrics.status.set(Number(0));
-updateValidate(srcdsConfig.appid)
+updateValidate(srcdsConfig.appid, startupValidate)
   .then((result) => {
     // If steamcmd didn't shit the bed, continue
     if (result != 'error') {
@@ -385,6 +392,65 @@ function spawnSrcds() {
       srcdsChild.write('stats\r\n');
     });
 
+    expressApp.post('/restart', (request, response) => {
+      restartInProgress = true;
+      shutdownSrcds(srcdsChild, 'RESTART')
+        .then(() => {
+          spawnSrcds();
+          restartInProgress = false;
+          response.send('complete');
+          return;
+        })
+        .catch((error) => {
+          throw error;
+        });
+    });
+
+    expressApp.post('/update', (request, response) => {
+      restartInProgress = true;
+      shutdownSrcds(srcdsChild, 'UPDATE')
+        .then(() => {
+          // eslint-disable-next-line promise/no-nesting
+          updateValidate(srcdsConfig.appid, false)
+            .then(() => {
+              spawnSrcds();
+              restartInProgress = false;
+              response.send('complete');
+              return;
+            })
+            .catch((error) => {
+              throw error;
+            });
+
+          return;
+        })
+        .catch((error) => {
+          throw error;
+        });
+    });
+
+    expressApp.post('/validate', (request, response) => {
+      restartInProgress = true;
+      shutdownSrcds(srcdsChild, 'RESTART')
+        .then(() => {
+          // eslint-disable-next-line promise/no-nesting
+          updateValidate(srcdsConfig.appid, true)
+            .then(() => {
+              spawnSrcds();
+              restartInProgress = false;
+              response.send('complete');
+              return;
+            })
+            .catch((error) => {
+              throw error;
+            });
+          return;
+        })
+        .catch((error) => {
+          throw error;
+        });
+    });
+
     // Forward stdout from srcds to our own
     srcdsChild.onData((data) => {
       data = data.toString();
@@ -433,7 +499,7 @@ function spawnSrcds() {
           // No-op
         }
       } else {
-        console.log(`[${timestamp()}]  ${data}`);
+        process.stdout.write(`[${timestamp()}]  ${data}`);
         srcds2wsPipe.push(data);
       }
     });
@@ -446,23 +512,24 @@ function spawnSrcds() {
       // Do some cleanup
       srcdsChild.removeAllListeners();
       // Wait 5 seconds
-      setTimeout(() => {
-        // If we're shutting down, no-op and exit (other sigterm handler will finish cleanup for us)
-        if (shutdownInProgress) {
-          expressServer.close();
-          return;
-        } else {
-          // Otherwise, check for an update and restart srcds
-          updateValidate(srcdsConfig.appid)
-            .then(() => {
-              spawnSrcds();
-              return;
-            })
-            .catch((error) => {
-              throw error;
-            });
-        }
-      }, 5000);
+      // If we're shutting down, no-op and exit (other sigterm handler will finish cleanup for us)
+      if (shutdownInProgress) {
+        expressServer.close();
+        return;
+      } else if (restartInProgress) {
+        // Someone else is handling restart for us, no-op
+        return;
+      } else {
+        // Otherwise, check for an update and restart srcds
+        updateValidate(srcdsConfig.appid, false)
+          .then(() => {
+            spawnSrcds();
+            return;
+          })
+          .catch((error) => {
+            throw error;
+          });
+      }
     });
 
     // Initial sigterm handler
@@ -510,7 +577,7 @@ function shutdownSrcds(srcdsChild, reason) {
 
 // Spawn steamcmd to check/apply/validate updates
 // TODO: allow dynamic assignment of forceValidate
-function updateValidate(appid) {
+function updateValidate(appid, validate) {
   return new Promise((resolve, reject) => {
     console.log(`[${timestamp()}]  Checking for update`);
     if (debug) clog.debug(`updateValidate(${appid})`);
@@ -520,9 +587,7 @@ function updateValidate(appid) {
     var steamcmdCommandLine = [];
     // Is forceValidate set?
     // TODO: make this dynamic
-    if (forceValidate === 'true') {
-      if (debug) clog.debug('forceValidate true, forcing validation');
-
+    if (validate) {
       console.log(`[${timestamp()}]  Forcing validation`);
       steamcmdCommandLine = [
         `+force_install_dir "${installDir}"`,
@@ -561,7 +626,7 @@ function updateValidate(appid) {
     steamcmdChild.onData((data) => {
       data = data.toString().replace('\r\n', '\n');
 
-      console.log(`[${timestamp()}]  ${data}`);
+      process.stdout.write(`[${timestamp()}]  ${data}`);
       srcds2wsPipe.push(data);
     });
 
