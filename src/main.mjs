@@ -481,23 +481,25 @@ function spawnSrcds() {
       var isStatsCommand = data.match(/stats\s+/);
       if (parsedStats || isStatsCommand) {
         try {
-          parsedStats = parsedStats[0].split(/\s+/);
-          // TODO drop the first and last elements, adjust below as necessary
-          metrics.status.set(Number(1));
-          metrics.cpu.set(Number(parsedStats[1]));
-          metrics.netin.set(Number(parsedStats[2]));
-          metrics.netout.set(Number(parsedStats[3]));
-          metrics.uptime.set(Number(parsedStats[4]));
-          metrics.maps.set(Number(parsedStats[5]));
-          metrics.fps.set(Number(parsedStats[6]));
-          metrics.players.set(Number(parsedStats[7]));
-          metrics.svms.set(Number(parsedStats[8]));
-          metrics.varms.set(Number(parsedStats[9]));
-          metrics.tick.set(Number(parsedStats[10]));
-          statsEventRx.emit('complete', null);
-          if (printStatsOutput) {
-            console.log(`[${timestamp()}]  ${data}`);
-            srcds2wsPipe.push(data);
+          if (parsedStats) {
+            if (printStatsOutput) {
+              console.log(`[${timestamp()}]  ${data}`);
+              srcds2wsPipe.push(data);
+            }
+            parsedStats = parsedStats[0].split(/\s+/);
+            // TODO drop the first and last elements, adjust below as necessary
+            metrics.status.set(Number(1));
+            metrics.cpu.set(Number(parsedStats[1]));
+            metrics.netin.set(Number(parsedStats[2]));
+            metrics.netout.set(Number(parsedStats[3]));
+            metrics.uptime.set(Number(parsedStats[4]));
+            metrics.maps.set(Number(parsedStats[5]));
+            metrics.fps.set(Number(parsedStats[6]));
+            metrics.players.set(Number(parsedStats[7]));
+            metrics.svms.set(Number(parsedStats[8]));
+            metrics.varms.set(Number(parsedStats[9]));
+            metrics.tick.set(Number(parsedStats[10]));
+            statsEventRx.emit('complete', null);
           }
         } catch (error) {
           clog.error(error);
