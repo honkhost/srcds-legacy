@@ -44,7 +44,7 @@ const autoUpdate = process.env.SRCDS_AUTOUPDATE || 'true';
 const httpProxy = process.env.SRCDS_HTTP_PROXY || '';
 
 // Force a validation of game files when starting/updating
-const startupValidate = process.env.SRCDS_STARTUP_VALIDATE || false;
+const startupValidate = parseBool(process.env.SRCDS_STARTUP_VALIDATE) || false;
 
 // Websocket token
 const staticWSToken = process.env.SRCDS_WS_STATIC_TOKEN || crypto.randomBytes(128).toString('base64');
@@ -69,7 +69,7 @@ const srcds2wsPipe = new Stream.Readable();
 srcds2wsPipe._read = () => {};
 
 // Print output from 'stats' command
-var printStatsOutput = process.env.SRCDS_PRINT_STATS || false;
+var printStatsOutput = parseBool(process.env.SRCDS_PRINT_STATS) || false;
 
 // Regex to match output of 'stats' command
 // eslint-disable-next-line no-useless-escape,security/detect-unsafe-regex
@@ -106,9 +106,9 @@ const srcdsConfig = {
   wsapikey: process.env.SRCDS_WSAPIKEY || '', // Workshop API key
   rconPassword: process.env.SRCDS_RCON_PASSWORD, // RCON Password
   gamePassword: process.env.SRCDS_GAME_PASSWORD, // Game password
-  allowEmptyGamePassword: process.env.SRCDS_PUBLIC || false, // Allow empty game password?
+  allowEmptyGamePassword: parseBool(process.env.SRCDS_PUBLIC) || false, // Allow empty game password?
   fastDLUrl: new URL(process.env.SRCDS_FASTDLURL).toString() || '', // FastDL server
-  fakeStale: process.env.SRCDS_DEBUG_FAKE_STALE || false,
+  fakeStale: parseBool(process.env.SRCDS_DEBUG_FAKE_STALE) || false,
 };
 
 // If no rcon password was supplied, set one now (can be changed later in cfg files)
@@ -119,7 +119,7 @@ if (srcdsConfig.rconPassword === '') {
 
 // If no game password was supplied at startup, set one now (can be changed in cfg files)
 // If both the password is empty and allowEmptyGamePassword, allow a blank game password at startup (can be changed later in cfg files)
-if (srcdsConfig.gamePassword === '' && srcdsConfig.allowEmptyGamePassword === 'true') {
+if (srcdsConfig.gamePassword === '' && srcdsConfig.allowEmptyGamePassword) {
   console.log(
     `[${timestamp()}]  No Game password provided at startup and AllowEmptyGamePassword is true, server is publicly accessible!`,
   );
@@ -127,8 +127,6 @@ if (srcdsConfig.gamePassword === '' && srcdsConfig.allowEmptyGamePassword === 't
   srcdsConfig.gamePassword = crypto.randomBytes(24).toString('base64');
   console.log(`[${timestamp()}]  No Game password provided at startup, set to ${srcdsConfig.gamePassword}`);
 }
-
-const escape = String.raw`"`;
 
 // Build the srcds command line
 const srcdsCommandLine = [
@@ -149,7 +147,7 @@ const srcdsCommandLine = [
   '+rcon_password', srcdsConfig.rconPassword, // RCON password
   '+sv_password', srcdsConfig.gamePassword, // Game password
   '+hostname', ident, // Set the hostname at startup - can be overridden by config files later
-  // '+sv_downloadurl', escape + srcdsConfig.fastDLUrl + escape, // FastDL url
+  // '+sv_downloadurl', srcdsConfig.fastDLUrl, // FastDL url
 ];
 
 // foo
@@ -281,7 +279,9 @@ expressApp.get('/metrics', (request, response) => {
 // Keeps it from being hit by bots at least
 // And of course we auth it up above
 expressApp.ws('/ws', (websocket, request) => {
-  const srcIP = request.headers['forwarded'] || request.socket.remoteAddress;
+  // eslint-disable-next-line security/detect-unsafe-regex
+  const forwardedHeaderSrcIpRegex = /(?:[0-9]{1,3}\.){3}[0-9]{1,3}/;
+  const srcIP = request.headers['forwarded'].match(forwardedHeaderSrcIpRegex) || request.socket.remoteAddress;
   console.log(`[${timestamp()}]  [websocket console] Connected from IP ${srcIP}`);
   // websocket.write('HTTP/1.1 200 OK\r\n');
   websocket.on('message', (message) => {
@@ -500,7 +500,8 @@ function spawnSrcds() {
             srcds2wsPipe.push(data);
           }
         } catch (error) {
-          // No-op
+          clog.error(error);
+          // log and no-op
         }
       } else {
         process.stdout.write(`[${timestamp()}]  ${data}`);
@@ -659,4 +660,25 @@ function timestamp() {
   var now = new Date();
   now = now.toUTCString();
   return now;
+}
+
+function parseBool(string) {
+  if (string) {
+    switch (string.toLowerCase().trim()) {
+      case 'true':
+      case 'yes':
+      case '1':
+        return true;
+
+      case 'false':
+      case 'no':
+      case '0':
+      case null:
+        return false;
+      default:
+        return Boolean(string);
+    }
+  } else {
+    return false;
+  }
 }
