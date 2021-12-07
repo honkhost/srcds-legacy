@@ -13,6 +13,8 @@
     "netout",
     "nohltv",
     "norestart",
+    "piduage",
+    "pidusage",
     "rcon",
     "serverfiles",
     "setsteamaccount",

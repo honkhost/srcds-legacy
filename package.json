@@ -26,6 +26,7 @@
     "express": "^4.17.1",
     "express-ws": "^5.0.2",
     "node-pty": "^0.10.1",
+    "pidusage": "^3.0.0",
     "prom-client": "^14.0.1"
   },
   "devDependencies": {

@@ -16,6 +16,7 @@ import { default as Lock } from 'async-lock';
 import { default as express } from 'express';
 import { default as expressWS } from 'express-ws';
 import { default as prometheus } from 'prom-client';
+import { default as pidusage } from 'pidusage';
 
 //
 // Globals
@@ -47,7 +48,7 @@ const httpProxy = process.env.SRCDS_HTTP_PROXY || '';
 const startupValidate = parseBool(process.env.SRCDS_STARTUP_VALIDATE) || false;
 
 // Websocket token
-const staticWSToken = process.env.SRCDS_WS_STATIC_TOKEN || crypto.randomBytes(128).toString('base64');
+var staticWSToken = `Bearer ${process.env.SRCDS_WS_STATIC_TOKEN}` || `Bearer ${crypto.randomBytes(128).toString('base64')}`;
 
 // Locking - not strictly necessary, but nice to have
 var lock = new Lock();
@@ -107,7 +108,7 @@ const srcdsConfig = {
   rconPassword: process.env.SRCDS_RCON_PASSWORD, // RCON Password
   gamePassword: process.env.SRCDS_GAME_PASSWORD, // Game password
   allowEmptyGamePassword: parseBool(process.env.SRCDS_PUBLIC) || false, // Allow empty game password?
-  fastDLUrl: new URL(process.env.SRCDS_FASTDLURL).toString() || '', // FastDL server
+  //fastDLUrl: new URL(process.env.SRCDS_FASTDLURL).toString() || '', // FastDL server
   fakeStale: parseBool(process.env.SRCDS_DEBUG_FAKE_STALE) || false,
 };
 
@@ -170,7 +171,7 @@ const metrics = {
   }),
   cpu: new prometheus.Gauge({
     name: 'srcds_cpu',
-    help: 'CPU usage',
+    help: 'CPU usage as reported by srcds',
     registers: [prometheusRegistry],
   }),
   netin: new prometheus.Gauge({
@@ -218,11 +219,23 @@ const metrics = {
     help: 'The time in MS per tick',
     registers: [prometheusRegistry],
   }),
+  memory: new prometheus.Gauge({
+    name: 'srcds_memory',
+    help: 'SRCDS memory usage',
+    registers: [prometheusRegistry],
+  }),
+  real_cpu: new prometheus.Gauge({
+    name: 'srcds_real_cpu',
+    help: 'SRCDS real cpu usage',
+    registers: [prometheusRegistry],
+  }),
 };
 
 prometheusRegistry.setDefaultLabels({
   ident: ident,
   appid: srcdsConfig.appid,
+  instance: ident,
+  server: ident,
 });
 
 // End monitoring setup
@@ -233,10 +246,16 @@ var expressApp = express();
 expressWS(expressApp, null, {
   wsOptions: {
     verifyClient: (info, callback) => {
-      const token = info.req.headers['x-honkhost-instance-token'];
-      if (auth(token)) {
-        return callback(true);
-      } else {
+      const token = info.req.headers['authorization'];
+      try {
+        if (auth(token)) {
+          return callback(true);
+        } else {
+          clog.debug(info.req.headers['authorization'], staticWSToken);
+          return callback(false, 401, 'Unauthorized');
+        }
+      } catch (error) {
+        clog.debug(info.req.headers['authorization'], staticWSToken);
         return callback(false, 401, 'Unauthorized');
       }
     },
@@ -244,10 +263,16 @@ expressWS(expressApp, null, {
 });
 
 expressApp.use((request, response, next) => {
-  const token = request.headers['x-honkhost-instance-token'];
-  if (auth(token)) {
-    return next();
-  } else {
+  const token = request.headers['authorization'];
+  try {
+    if (auth(token)) {
+      return next();
+    } else {
+      clog.error(request.headers);
+      response.status(401).send('Unauthorized');
+    }
+  } catch (error) {
+    clog.error(error);
     clog.error(request.headers);
     response.status(401).send('Unauthorized');
   }
@@ -256,22 +281,9 @@ expressApp.use((request, response, next) => {
 // We declare this as a var here so we can shutdown the connection when srcds exits
 const expressServer = expressApp.listen(3000);
 
-expressApp.get('/metrics', (request, response) => {
-  printStatsOutput = false;
-  statsEventTx.emit('request', null);
-  const timeOut = setTimeout(async () => {
-    statsEventRx.removeAllListeners();
-    response.send('');
-    printStatsOutput = true;
-  }, 1000);
-  statsEventRx.on('complete', async () => {
-    clearTimeout(timeOut);
-    const toSend = await prometheusRegistry.metrics();
-    // if (debug) clog.debug('send metrics', toSend);
-    response.send(toSend);
-    statsEventRx.removeAllListeners();
-    printStatsOutput = true;
-  });
+expressApp.get('/metrics', async (request, response) => {
+  const toSend = await prometheusRegistry.metrics();
+  response.send(toSend);
 });
 
 // Setup the websocket for console
@@ -281,7 +293,7 @@ expressApp.get('/metrics', (request, response) => {
 expressApp.ws('/ws', (websocket, request) => {
   // eslint-disable-next-line security/detect-unsafe-regex
   const forwardedHeaderSrcIpRegex = /(?:[0-9]{1,3}\.){3}[0-9]{1,3}/;
-  const srcIP = request.headers['forwarded'].match(forwardedHeaderSrcIpRegex) || request.socket.remoteAddress;
+  const srcIP = request.headers['x-real-ip'] || request.socket.remoteAddress;
   console.log(`[${timestamp()}]  [websocket console] Connected from IP ${srcIP}`);
   // websocket.write('HTTP/1.1 200 OK\r\n');
   websocket.on('message', (message) => {
@@ -302,6 +314,7 @@ expressApp.ws('/ws', (websocket, request) => {
   //   websocket.send(data);
   // });
   websocket.on('close', () => {
+    clog.debug('Websocket connection closed');
     websocket.removeAllListeners();
   });
 });
@@ -332,6 +345,10 @@ updateValidate(srcdsConfig.appid, startupValidate)
 
 process.on('SIGINT', () => {
   console.error('SIGINT');
+});
+
+process.on('SIGTERM', () => {
+  console.error('SIGTERM');
 });
 
 //
@@ -380,6 +397,7 @@ function spawnSrcds() {
         HOME: homeDir,
         SRCDS_DIR: serverFilesDir,
         PWD: serverFilesDir,
+        http_proxy: httpProxy,
       },
     });
 
@@ -455,6 +473,19 @@ function spawnSrcds() {
         });
     });
 
+    // Metrics
+    const statsInterval = setInterval(() => {
+      printStatsOutput = false;
+      srcdsChild.write('stats\r\n');
+      pidusage(srcdsChild.pid, (error, stats) => {
+        metrics.real_cpu.set(Number(stats.cpu));
+        metrics.memory.set(Number(stats.memory));
+      });
+      statsEventRx.once('complete', async () => {
+        printStatsOutput = true;
+      });
+    }, 15000);
+
     // Forward stdout from srcds to our own
     srcdsChild.onData((data) => {
       data = data.toString();
@@ -479,7 +510,8 @@ function spawnSrcds() {
 
       var parsedStats = data.match(statsRegex);
       var isStatsCommand = data.match(/stats\s+/);
-      if (parsedStats || isStatsCommand) {
+      // TODO rework this, figure out the right regex
+      if (parsedStats || isStatsCommand || data === 's' || data === 'st' || data === 'sta' || data === 'stat') {
         try {
           if (parsedStats) {
             if (printStatsOutput) {
@@ -516,6 +548,7 @@ function spawnSrcds() {
       console.log(
         `\n\n[${timestamp()}]  srcds_linux exited with code ${exit.exitCode} because of signal ${exit.signal}\n\n`,
       );
+      metrics.status.set(Number(0));
       // Do some cleanup
       srcdsChild.removeAllListeners();
       // Wait 5 seconds
@@ -553,6 +586,7 @@ function spawnSrcds() {
       shutdownInProgress = true;
       statsEventTx.removeAllListeners();
       ws2srcdsPipe.removeAllListeners();
+      clearInterval(statsInterval);
       shutdownSrcds(srcdsChild, 'SIGTERM')
         .then(() => {
           return;
