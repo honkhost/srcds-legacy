@@ -300,19 +300,12 @@ expressApp.ws('/ws', (websocket, request) => {
     // Take incoming websocket messages and dump them to srcdsChild
     console.error('Websocket message: ' + message.toString());
     ws2srcdsPipe.push(message.toString() + '\r\n');
-    // srcdsChild.write(`${message}\n`);
   });
-
   // Take incoming stdout from srcdsChild and dump it to the websocket
   srcds2wsPipe.on('data', (data) => {
     data = data.toString();
     websocket.send(data);
   });
-
-  // srcdsChild.onData((data) => {
-  //   data = data.toString();
-  //   websocket.send(data);
-  // });
   websocket.on('close', () => {
     clog.debug('Websocket connection closed');
     websocket.removeAllListeners();
