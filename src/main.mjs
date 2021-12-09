@@ -262,7 +262,7 @@ expressWS(expressApp, null, {
   },
 });
 
-expressApp.use((request, response, next) => {
+expressApp.use(/\/((?!healthcheck).)*/,(request, response, next) => {
   const token = request.headers['authorization'];
   try {
     if (auth(token)) {
@@ -284,6 +284,10 @@ const expressServer = expressApp.listen(3000);
 expressApp.get('/metrics', async (request, response) => {
   const toSend = await prometheusRegistry.metrics();
   response.send(toSend);
+});
+
+expressApp.get('/healthcheck', async (request, response) => {
+  response.send('ok');
 });
 
 // Setup the websocket for console
@@ -359,6 +363,7 @@ function auth(token) {
     return false;
   }
 }
+
 
 //
 // Spawn SRCDS
