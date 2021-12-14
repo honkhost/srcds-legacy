@@ -47,7 +47,8 @@ const httpProxy = process.env.SRCDS_HTTP_PROXY || '';
 const startupValidate = parseBool(process.env.SRCDS_STARTUP_VALIDATE) || false;
 
 // Websocket token
-var staticWSToken = `Bearer ${process.env.SRCDS_WS_STATIC_TOKEN}` || `Bearer ${crypto.randomBytes(128).toString('base64')}`;
+var staticWSToken =
+  `Bearer ${process.env.SRCDS_WS_STATIC_TOKEN}` || `Bearer ${crypto.randomBytes(128).toString('base64')}`;
 
 // Locking - not strictly necessary, but nice to have
 var lock = new Lock();
@@ -132,21 +133,35 @@ if (srcdsConfig.gamePassword === '' && srcdsConfig.allowEmptyGamePassword) {
 const srcdsCommandLine = [
   '-usercon', // Enable rcon
   '-norestart', // We handle restarts ourselves
-  '-ip', srcdsConfig.ip, // Bind ip
-  '-port', srcdsConfig.port, // Bind port
-  '-game', srcdsConfig.game, // Mod name
+  '-ip',
+  srcdsConfig.ip, // Bind ip
+  '-port',
+  srcdsConfig.port, // Bind port
+  '-game',
+  srcdsConfig.game, // Mod name
   '-nohltv', // Disable HLTV
-  '-tickrate', srcdsConfig.tickrate, // Tickrate
-  '-maxplayers_override', srcdsConfig.maxPlayers, // Maxplayers
-  '-authkey', srcdsConfig.wsapikey, // Workshop api key
-  '+map', srcdsConfig.startupMap, // Startup map
-  '+servercfgfile', srcdsConfig.serverCfgFile, // Main server configuration file
-  '+game_type', srcdsConfig.gameType, // Game type
-  '+game_mode', srcdsConfig.gameMode, // Game mode
-  '+sv_setsteamaccount', srcdsConfig.gslt, // GSLT
-  '+rcon_password', srcdsConfig.rconPassword, // RCON password
-  '+sv_password', srcdsConfig.gamePassword, // Game password
-  '+hostname', ident, // Set the hostname at startup - can be overridden by config files later
+  '-tickrate',
+  srcdsConfig.tickrate, // Tickrate
+  '-maxplayers_override',
+  srcdsConfig.maxPlayers, // Maxplayers
+  '-authkey',
+  srcdsConfig.wsapikey, // Workshop api key
+  '+map',
+  srcdsConfig.startupMap, // Startup map
+  '+servercfgfile',
+  srcdsConfig.serverCfgFile, // Main server configuration file
+  '+game_type',
+  srcdsConfig.gameType, // Game type
+  '+game_mode',
+  srcdsConfig.gameMode, // Game mode
+  '+sv_setsteamaccount',
+  srcdsConfig.gslt, // GSLT
+  '+rcon_password',
+  srcdsConfig.rconPassword, // RCON password
+  '+sv_password',
+  srcdsConfig.gamePassword, // Game password
+  '+hostname',
+  ident, // Set the hostname at startup - can be overridden by config files later
   // '+sv_downloadurl', srcdsConfig.fastDLUrl, // FastDL url
 ];
 
@@ -261,7 +276,7 @@ expressWS(expressApp, null, {
   },
 });
 
-expressApp.use(/\/((?!healthcheck).)*/,(request, response, next) => {
+expressApp.use(/\/((?!metrics|healthcheck).)*/, (request, response, next) => {
   const token = request.headers['authorization'];
   try {
     if (auth(token)) {
@@ -295,7 +310,7 @@ expressApp.get('/healthcheck', async (request, response) => {
 // And of course we auth it up above
 expressApp.ws('/ws', (websocket, request) => {
   // eslint-disable-next-line security/detect-unsafe-regex
-  const forwardedHeaderSrcIpRegex = /(?:[0-9]{1,3}\.){3}[0-9]{1,3}/;
+  //const forwardedHeaderSrcIpRegex = /(?:[0-9]{1,3}\.){3}[0-9]{1,3}/;
   const srcIP = request.headers['x-real-ip'] || request.socket.remoteAddress;
   console.log(`[${timestamp()}]  [websocket console] Connected from IP ${srcIP}`);
   // websocket.write('HTTP/1.1 200 OK\r\n');
@@ -363,7 +378,6 @@ function auth(token) {
     return false;
   }
 }
-
 
 //
 // Spawn SRCDS
@@ -750,11 +764,15 @@ heartbeat
 
 echo "--- end autoexec.cfg ---"
 
-`
+`;
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
   if (!fs.existsSync(autoExecPath)) {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
     fs.mkdirSync(autoExecPath, { recursive: true });
   }
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
   if (!fs.existsSync(autoExecFile)) {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
     fs.writeFileSync(autoExecFile, autoExecTemplate, (error) => {
       if (error) throw error;
       clog.debug('autoexec created');
