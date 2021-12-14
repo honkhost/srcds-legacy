@@ -23,16 +23,20 @@
       "Atomics": "readonly",
       "SharedArrayBuffer": "readonly"
   },
-  "overrides": [{
-    "files": ["*.mjs"],
-    "parser": "@babel/eslint-parser"
-  }],
-  "parserOptions": {
-      "ecmaVersion": 2021,
-      "requireConfigFile": true,
-      "configFile": "babel.config.json",
-      "rootMode": "upward"
-  },
+  // "overrides": [{
+  //   "files": ["*.mjs"],
+  //   "parser": "@babel/eslint-parser"
+  // }],
+  // "parserOptions": {
+  //     "ecmaVersion": 2021,
+  //     "requireConfigFile": false,
+  //     "rootMode": "upward",
+  //     "babelOptions": {
+  //       "plugins": [
+  //           "@babel/plugin-syntax-top-level-await"
+  //         ]
+  //     }
+  // },
   "rules": {
       "arrow-parens": ["error", "always"],
       "prefer-arrow-callback": ["error"],

@@ -1,7 +1,7 @@
 {
-  "name": "sourchestrator_runner",
+  "name": "csgo",
   "version": "0.0.1",
-  "description": "runs srcds",
+  "description": "runs csgo",
   "private": true,
   "scripts": {
     "test": "node_modules/.bin/eslint --ignore-path .gitignore .",
@@ -9,7 +9,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/epers/sourchestrator_runner"
+    "url": "https://git.honkhost.gg/honkhost/srcds/csgo.git"
   },
   "keywords": [
     "srcds"
@@ -17,9 +17,9 @@
   "author": "Edwin Pers",
   "license": "SEE LICENSE IN LICENSE",
   "bugs": {
-    "url": "https://github.com/epers/srcds_runner/issues"
+    "url": "https://git.honkhost.gg/honkhost/srcds/csgo/-/issues"
   },
-  "homepage": "https://github.com/epers/srcds_runner#readme",
+  "homepage": "https://git.honkhost.gg/honkhost/srcds/csgo",
   "dependencies": {
     "async-lock": "^1.3.0",
     "ee-log": "github:epers/ee-log",
