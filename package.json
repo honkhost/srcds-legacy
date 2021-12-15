@@ -27,7 +27,8 @@
     "express-ws": "^5.0.2",
     "node-pty": "^0.10.1",
     "pidusage": "^3.0.0",
-    "prom-client": "^14.0.1"
+    "prom-client": "^14.0.1",
+    "why-is-node-running": "^2.2.0"
   },
   "devDependencies": {
     "@babel/core": "^7.0.0",
