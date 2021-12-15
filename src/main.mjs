@@ -425,6 +425,7 @@ function spawnSrcds() {
     throw new Error(`Locked: Game ${gameLockStatus}; Update ${updateLockStatus}`);
   } else {
     // Spawn srcds
+    metrics.uptime.set(Number(0));
 
     if (debug) clog.debug(`Spawning srcds at ${serverFilesDir}/srcds_linux with options`, srcdsCommandLine);
 
@@ -705,6 +706,7 @@ function updateValidate(appid, validate) {
     if (validate) {
       console.log(`[${timestamp()}]  Forcing validation`);
       metrics.status.set(Number(3));
+      metrics.uptime.set(Number(0));
       steamcmdCommandLine = [
         `+force_install_dir "${installDir}"`,
         `+login anonymous`,
@@ -713,6 +715,7 @@ function updateValidate(appid, validate) {
       ];
     } else {
       metrics.status.set(Number(2));
+      metrics.uptime.set(Number(0));
       // eslint-disable-next-line prettier/prettier
       steamcmdCommandLine = [
         `+force_install_dir "${installDir}"`,
