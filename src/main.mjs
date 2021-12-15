@@ -16,6 +16,7 @@ import { default as express } from 'express';
 import { default as expressWS } from 'express-ws';
 import { default as prometheus } from 'prom-client';
 import { default as pidusage } from 'pidusage';
+// import { default as why } from 'why-is-node-running';
 
 //
 // Globals
@@ -309,9 +310,7 @@ expressApp.get('/healthcheck', async (request, response) => {
 // Keeps it from being hit by bots at least
 // And of course we auth it up above
 expressApp.ws('/ws', (websocket, request) => {
-  // eslint-disable-next-line security/detect-unsafe-regex
-  //const forwardedHeaderSrcIpRegex = /(?:[0-9]{1,3}\.){3}[0-9]{1,3}/;
-  const srcIP = request.headers['x-real-ip'] || request.socket.remoteAddress;
+  const srcIP = request.headers['cf-connecting-ip'] || request.socket.remoteAddress;
   console.log(`[${timestamp()}]  [websocket console] Connected from IP ${srcIP}`);
   // websocket.write('HTTP/1.1 200 OK\r\n');
   websocket.on('message', (message) => {
@@ -328,7 +327,39 @@ expressApp.ws('/ws', (websocket, request) => {
     clog.debug('Websocket connection closed');
     websocket.removeAllListeners();
   });
+
+  // When we get sigterm and a websocket is open:
+  // Start a 1 second interval to check again
+  // If srcds is exited, close the websocket
+  // TODO: upper limit
+  process.on('SIGTERM', () => {
+    const interval = setInterval(() => {
+      try {
+        if (typeof srcdsChild === 'undefined') {
+          clearInterval(interval);
+          websocket.close(1012, 'sigterm received');
+          console.error('closed websocket');
+        } else {
+          console.error('srcds still running, typeof srcdsChild:');
+          console.error(typeof srcdsChild);
+          // noop, continue waiting
+        }
+      } catch (error) {
+        clog.error(error);
+        clearInterval(interval);
+        websocket.close(1012, 'sigterm received');
+        console.error('closed websocket');
+      }
+    }, 1000);
+  });
 });
+
+// For debugging
+// process.on('SIGTERM', () => {
+//   setTimeout(() => {
+//     why();
+//   }, 10000).unref();
+// });
 
 //
 // End setup
@@ -563,7 +594,7 @@ function spawnSrcds() {
       metrics.status.set(Number(0));
       // Do some cleanup
       srcdsChild.removeAllListeners();
-      // Wait 5 seconds
+      srcdsChild = undefined;
       // If we're shutting down, no-op and exit (other sigterm handler will finish cleanup for us)
       if (shutdownInProgress) {
         expressServer.close();
@@ -626,7 +657,6 @@ function shutdownSrcds(srcdsChild, reason) {
       // Then send the 'quit' command
       srcdsChild.write('\r\n\r\nquit\r\n\r\n');
       srcdsChild.onExit((exit) => {
-        srcdsChild = undefined;
         return resolve(exit);
       });
     } else {
@@ -686,7 +716,6 @@ function updateValidate(appid, validate) {
     // When steamcmd outputs, output it to console
     steamcmdChild.onData((data) => {
       data = data.toString().replace('\r\n', '\n');
-
       process.stdout.write(`[${timestamp()}]  ${data}`);
       srcds2wsPipe.push(data);
     });
