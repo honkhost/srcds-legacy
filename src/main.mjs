@@ -521,9 +521,9 @@ function spawnSrcds() {
       }
 
       var parsedStats = data.match(statsRegex);
-      var isStatsCommand = data.match(/stats\s+/);
+      var isStatsCommand = data.match(/s?t?a?ts\s+$/);
       // TODO rework this, figure out the right regex
-      if (parsedStats || isStatsCommand || data === 's' || data === 'st' || data === 'sta' || data === 'stat') {
+      if (parsedStats || isStatsCommand) {
         try {
           if (parsedStats) {
             if (printStatsOutput) {
