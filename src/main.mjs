@@ -88,7 +88,6 @@ const updateRequiredString = 'MasterRequestRestart\r\nYour server needs to be r
 //
 // EventEmitters
 // TODO there has to be a better way
-const statsEventTx = new events.EventEmitter();
 const statsEventRx = new events.EventEmitter();
 
 //
@@ -166,7 +165,6 @@ const srcdsCommandLine = [
   // '+sv_downloadurl', srcdsConfig.fastDLUrl, // FastDL url
 ];
 
-// foo
 // Some debug statements
 // if (debug) clog.debug('process.env', process.env);
 // if (debug) clog.debug('SRCDS config', srcdsConfig);
@@ -296,12 +294,12 @@ expressApp.use(/\/((?!metrics|healthcheck).)*/, (request, response, next) => {
 // We declare this as a var here so we can shutdown the connection when srcds exits
 const expressServer = expressApp.listen(3000);
 
-expressApp.get('/metrics', async (request, response) => {
+expressApp.get('/v1/metrics', async (request, response) => {
   const toSend = await prometheusRegistry.metrics();
   response.send(toSend);
 });
 
-expressApp.get('/healthcheck', async (request, response) => {
+expressApp.get('/v1/healthcheck', async (request, response) => {
   response.send('ok');
 });
 
@@ -309,7 +307,7 @@ expressApp.get('/healthcheck', async (request, response) => {
 // We "hide" the route as /ws/${ident}
 // Keeps it from being hit by bots at least
 // And of course we auth it up above
-expressApp.ws('/ws', (websocket, request) => {
+expressApp.ws('/v1/ws', (websocket, request) => {
   const srcIP = request.headers['cf-connecting-ip'] || request.socket.remoteAddress;
   console.log(`[${timestamp()}]  [websocket console] Connected from IP ${srcIP}`);
   // websocket.write('HTTP/1.1 200 OK\r\n');
@@ -453,26 +451,40 @@ function spawnSrcds() {
       srcdsChild.write(data);
     });
 
-    statsEventTx.on('request', () => {
-      srcdsChild.write('stats\r\n');
-    });
-
-    expressApp.post('/restart', (request, response) => {
+    expressApp.post('/v1/restart', (request, response) => {
       restartInProgress = true;
+      const jobUid = crypto.randomBytes(8).toString('hex');
+      const jobUrl = `https://${request.hostname}${request.headers['x-forwarded-prefix']}/v1/job/${jobUid}`;
+      var jobStatus = 'running';
+      response.send({
+        jobUrl: jobUrl,
+        jobUid: jobUid,
+      });
       shutdownSrcds(srcdsChild, 'RESTART')
         .then(() => {
           spawnSrcds();
+          jobStatus = 'complete';
           restartInProgress = false;
-          response.send('complete');
+          // response.send('complete');
           return;
         })
         .catch((error) => {
           throw error;
         });
+      expressApp.get(`/v1/job/${jobUid}`, (request, response) => {
+        response.send(jobStatus);
+      });
     });
 
-    expressApp.post('/update', (request, response) => {
+    expressApp.post('/v1/update', (request, response) => {
       restartInProgress = true;
+      const jobUid = crypto.randomBytes(8).toString('hex');
+      const jobUrl = `https://${request.hostname}${request.headers['x-forwarded-prefix']}/v1/job/${jobUid}`;
+      var jobStatus = 'running';
+      response.send({
+        jobUrl: jobUrl,
+        jobUid: jobUid,
+      });
       shutdownSrcds(srcdsChild, 'UPDATE')
         .then(() => {
           // eslint-disable-next-line promise/no-nesting
@@ -480,7 +492,7 @@ function spawnSrcds() {
             .then(() => {
               spawnSrcds();
               restartInProgress = false;
-              response.send('complete');
+              jobStatus = 'complete';
               return;
             })
             .catch((error) => {
@@ -492,10 +504,20 @@ function spawnSrcds() {
         .catch((error) => {
           throw error;
         });
+      expressApp.get(`/v1/job/${jobUid}`, (request, response) => {
+        response.send(jobStatus);
+      });
     });
 
-    expressApp.post('/validate', (request, response) => {
+    expressApp.post('/v1/validate', (request, response) => {
       restartInProgress = true;
+      const jobUid = crypto.randomBytes(8).toString('hex');
+      const jobUrl = `https://${request.hostname}${request.headers['x-forwarded-prefix']}/v1/job/${jobUid}`;
+      var jobStatus = 'running';
+      response.send({
+        jobUrl: jobUrl,
+        jobUid: jobUid,
+      });
       shutdownSrcds(srcdsChild, 'RESTART')
         .then(() => {
           // eslint-disable-next-line promise/no-nesting
@@ -503,7 +525,7 @@ function spawnSrcds() {
             .then(() => {
               spawnSrcds();
               restartInProgress = false;
-              response.send('complete');
+              jobStatus = 'complete';
               return;
             })
             .catch((error) => {
@@ -514,6 +536,9 @@ function spawnSrcds() {
         .catch((error) => {
           throw error;
         });
+      expressApp.get(`/v1/job/${jobUid}`, (request, response) => {
+        response.send(jobStatus);
+      });
     });
 
     // Metrics
@@ -598,17 +623,17 @@ function spawnSrcds() {
       // If we're shutting down, no-op and exit (other sigterm handler will finish cleanup for us)
       if (shutdownInProgress) {
         expressServer.close();
-        statsEventTx.removeAllListeners();
+        clearInterval(statsInterval);
         ws2srcdsPipe.removeAllListeners();
         return;
       } else if (restartInProgress) {
         // Someone else is handling restart for us, no-op
-        statsEventTx.removeAllListeners();
+        clearInterval(statsInterval);
         ws2srcdsPipe.removeAllListeners();
         return;
       } else {
         // Otherwise, check for an update and restart srcds
-        statsEventTx.removeAllListeners();
+        clearInterval(statsInterval);
         ws2srcdsPipe.removeAllListeners();
         updateValidate(srcdsConfig.appid, false)
           .then(() => {
@@ -627,7 +652,6 @@ function spawnSrcds() {
     process.on('SIGTERM', () => {
       console.log(`\n\n[${timestamp()}]  SIGTERM received, shutting down \n\n`);
       shutdownInProgress = true;
-      statsEventTx.removeAllListeners();
       ws2srcdsPipe.removeAllListeners();
       clearInterval(statsInterval);
       shutdownSrcds(srcdsChild, 'SIGTERM')
@@ -680,6 +704,7 @@ function updateValidate(appid, validate) {
     // TODO: make this dynamic
     if (validate) {
       console.log(`[${timestamp()}]  Forcing validation`);
+      metrics.status.set(Number(3));
       steamcmdCommandLine = [
         `+force_install_dir "${installDir}"`,
         `+login anonymous`,
@@ -687,6 +712,7 @@ function updateValidate(appid, validate) {
         `+quit`,
       ];
     } else {
+      metrics.status.set(Number(2));
       // eslint-disable-next-line prettier/prettier
       steamcmdCommandLine = [
         `+force_install_dir "${installDir}"`,
@@ -722,6 +748,7 @@ function updateValidate(appid, validate) {
 
     // When steamcmd is done, return the exitcode
     steamcmdChild.onExit((code) => {
+      metrics.status.set(Number(0));
       console.log(`[${timestamp()}]  Steamcmd exited with code ${code.exitCode} because of signal ${code.signal}`);
       if (code.exitCode === 0) {
         updateInProgress = false;
