@@ -90,6 +90,8 @@ var printStatsOutput = parseBool(process.env.SRCDS_PRINT_STATS) || false;
 // Regex to match output of 'stats' command
 // eslint-disable-next-line no-useless-escape,security/detect-unsafe-regex
 const statsRegex = /(?:^|\n)\s*((?:[\d\.]+\s*){10})(?:$|\n)/;
+const statsHeaderRegex =
+  /\s*(?:CPU)\s*(?:NetIn)\s*(?:NetOut)\s*(?:Uptime)\s*(?:Maps)\s*(?:FPS)\s*(?:Players)\s*(?:Svms)\s*(?:\+-ms)\s*(?:~tick)/;
 
 // String to look for to run update
 // Specified as a literal instead of a regex
@@ -366,13 +368,6 @@ expressApp.ws('/v1/ws', (websocket, request) => {
   });
 });
 
-// For debugging
-// process.on('SIGTERM', () => {
-//   setTimeout(() => {
-//     why();
-//   }, 10000).unref();
-// });
-
 //
 // End setup
 
@@ -402,15 +397,16 @@ updateValidate(srcdsConfig.appid, startupValidate)
     clog.error(error);
   });
 
-process.on('SIGINT', () => {
-  console.error('SIGINT');
-});
-
+// For debugging
 process.on('SIGTERM', () => {
   console.error('SIGTERM');
   setTimeout(() => {
     why();
-  }, 5000).unref();
+  }, 10000).unref();
+});
+
+process.on('SIGINT', () => {
+  console.error('SIGINT');
 });
 
 //
@@ -577,59 +573,71 @@ function spawnSrcds() {
     }, 15000);
 
     // Forward stdout from srcds to our own
-    srcdsChild.onData((data) => {
-      data = data.toString();
-      // If we see "MasterRequestRestart" and autoupdate is enabled, trigger an update
-      // eslint-disable-next-line prettier/prettier
-      if (data === updateRequiredString && autoUpdate === 'true' && updateInProgress === false) {
-        updateInProgress = true;
-        console.log(`\n\n[${timestamp()}]  Server update required\n\n`);
-        console.log(`\n\n[${timestamp()}]  Server will restart for update in 30 seconds\r\n\r\n`);
-        srcdsChild.write(`\r\n\r\nsay Server update required\n\n`, 'utf8');
-        srcdsChild.write(`\r\n\r\nsay Server will restart for update in 30 seconds\r\n\r\n`, 'utf8');
-        setTimeout(() => {
-          shutdownSrcds(srcdsChild, 'UPDATE')
-            .then(() => {
-              return;
-            })
-            .catch((error) => {
-              throw error;
-            });
-        }, 30000); // 30 seconds
-      }
-
-      var parsedStats = data.match(statsRegex);
-      var isStatsCommand = data.match(/s?t?a?ts\s+$/);
-      // TODO rework this, figure out the right regex
-      if (parsedStats || isStatsCommand) {
-        try {
-          if (parsedStats) {
-            if (printStatsOutput) {
-              console.log(`[${timestamp()}]  ${data}`);
-              srcds2wsPipe.push(data);
-            }
-            parsedStats = parsedStats[0].split(/\s+/);
-            // TODO drop the first and last elements, adjust below as necessary
-            metrics.status.set(Number(1));
-            metrics.cpu.set(Number(parsedStats[1]));
-            metrics.netin.set(Number(parsedStats[2]));
-            metrics.netout.set(Number(parsedStats[3]));
-            metrics.uptime.set(Number(parsedStats[4]));
-            metrics.maps.set(Number(parsedStats[5]));
-            metrics.fps.set(Number(parsedStats[6]));
-            metrics.players.set(Number(parsedStats[7]));
-            metrics.svms.set(Number(parsedStats[8]));
-            metrics.varms.set(Number(parsedStats[9]));
-            metrics.tick.set(Number(parsedStats[10]));
-            statsEventRx.emit('complete', null);
+    // TODO: refactor this, too many conditionals, has to be a better way
+    srcdsChild.onData((rawData) => {
+      rawData = rawData.toString();
+      var dataArray = rawData.split('\r\n');
+      for (let i = 0; i < dataArray.length; i++) {
+        // eslint-disable-next-line security/detect-object-injection
+        var data = dataArray[i];
+        if (data !== '') {
+          // If we see "MasterRequestRestart" and autoupdate is enabled, trigger an update
+          // eslint-disable-next-line prettier/prettier
+          if (data === updateRequiredString && autoUpdate === 'true' && updateInProgress === false) {
+            updateInProgress = true;
+            console.log(`\n\n[${timestamp()}]  Server update required\n\n`);
+            console.log(`\n\n[${timestamp()}]  Server will restart for update in 30 seconds\r\n\r\n`);
+            srcdsChild.write(`\r\n\r\nsay Server update required\n\n`, 'utf8');
+            srcdsChild.write(`\r\n\r\nsay Server will restart for update in 30 seconds\r\n\r\n`, 'utf8');
+            setTimeout(() => {
+              shutdownSrcds(srcdsChild, 'UPDATE')
+                .then(() => {
+                  return;
+                })
+                .catch((error) => {
+                  throw error;
+                });
+            }, 30000); // 30 seconds
           }
-        } catch (error) {
-          clog.error(error);
-          // log and no-op
+
+          var isStatsCommand = data.match(/sta?t?s?$/);
+          var isStatsHeader = data.match(statsHeaderRegex);
+          var parsedStats = data.match(statsRegex);
+          //var isStatsCommand = data.split(/\s+/).match(/s?t?a?ts$/);
+          // TODO rework this, figure out the right regex
+          if (isStatsCommand || isStatsHeader || parsedStats) {
+            try {
+              if (parsedStats || isStatsHeader) {
+                if (printStatsOutput) {
+                  process.stdout.write(`[${timestamp()}]  ${data}\n`);
+                  srcds2wsPipe.push(data);
+                }
+                if (parsedStats) {
+                  parsedStats = parsedStats[0].split(/\s+/);
+                  // TODO drop the first and last elements, adjust below as necessary
+                  metrics.status.set(Number(1));
+                  metrics.cpu.set(Number(parsedStats[1]));
+                  metrics.netin.set(Number(parsedStats[2]));
+                  metrics.netout.set(Number(parsedStats[3]));
+                  metrics.uptime.set(Number(parsedStats[4]));
+                  metrics.maps.set(Number(parsedStats[5]));
+                  metrics.fps.set(Number(parsedStats[6]));
+                  metrics.players.set(Number(parsedStats[7]));
+                  metrics.svms.set(Number(parsedStats[8]));
+                  metrics.varms.set(Number(parsedStats[9]));
+                  metrics.tick.set(Number(parsedStats[10]));
+                  statsEventRx.emit('complete', null);
+                }
+              }
+            } catch (error) {
+              clog.error(error);
+              // log and no-op
+            }
+          } else {
+            process.stdout.write(`[${timestamp()}]  ${data}\n`);
+            srcds2wsPipe.push(data);
+          }
         }
-      } else {
-        process.stdout.write(`[${timestamp()}]  ${data}`);
-        srcds2wsPipe.push(data);
       }
     });
 
