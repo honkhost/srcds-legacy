@@ -330,7 +330,7 @@ expressApp.ws('/v1/ws', (websocket, request) => {
   websocket.on('message', (message) => {
     // Take incoming websocket messages and dump them to srcdsChild
     console.error('Websocket message: ' + message.toString());
-    ws2srcdsPipe.push(message.toString() + '\r\n');
+    ws2srcdsPipe.push(message.toString() + '\n');
   });
   // Take incoming stdout from srcdsChild and dump it to the websocket
   srcds2wsPipe.on('data', (data) => {
@@ -580,15 +580,19 @@ function spawnSrcds() {
       for (let i = 0; i < dataArray.length; i++) {
         // eslint-disable-next-line security/detect-object-injection
         var data = dataArray[i];
-        if (data !== '') {
+        if (data != '') {
           // If we see "MasterRequestRestart" and autoupdate is enabled, trigger an update
           // eslint-disable-next-line prettier/prettier
           if (data === updateRequiredString && autoUpdate === 'true' && updateInProgress === false) {
             updateInProgress = true;
-            console.log(`\n\n[${timestamp()}]  Server update required\n\n`);
-            console.log(`\n\n[${timestamp()}]  Server will restart for update in 30 seconds\r\n\r\n`);
-            srcdsChild.write(`\r\n\r\nsay Server update required\n\n`, 'utf8');
-            srcdsChild.write(`\r\n\r\nsay Server will restart for update in 30 seconds\r\n\r\n`, 'utf8');
+            const msg1 = `\n--- [${timestamp()}]  Server update required ---\n`;
+            const msg2 = `\n--- [${timestamp()}]  Server will restart for update in 30 seconds ---\n`
+            process.stdout.write(msg1);
+            process.stdout.write(msg2);
+            srcds2wsPipe.push(msg1);
+            srcds2wsPipe.push(msg2);
+            srcdsChild.write(`\r\nsay Server update required\r\n`, 'utf8');
+            srcdsChild.write(`\r\nsay Server will restart for update in 30 seconds\r\n`, 'utf8');
             setTimeout(() => {
               shutdownSrcds(srcdsChild, 'UPDATE')
                 .then(() => {
@@ -600,7 +604,7 @@ function spawnSrcds() {
             }, 30000); // 30 seconds
           }
 
-          var isStatsCommand = data.match(/sta?t?s?$/);
+          var isStatsCommand = data.match(/st?a?t?s?$/);
           var isStatsHeader = data.match(statsHeaderRegex);
           var parsedStats = data.match(statsRegex);
           //var isStatsCommand = data.split(/\s+/).match(/s?t?a?ts$/);
@@ -715,9 +719,9 @@ function shutdownSrcds(srcdsChild, reason) {
       // Ask SRCDS to exit cleanly
       // First 'say' and 'echo' the date the command was received
 
-      srcdsChild.write(`\r\n\r\nsay 'quit' command received at ${timestamp()} [${reason}]\r\n\r\n`, 'utf8');
+      srcdsChild.write(`\r\nsay 'quit' command received at ${timestamp()} [${reason}]\r\n\r\n`, 'utf8');
       // Then send the 'quit' command
-      srcdsChild.write('\r\n\r\nquit\r\n\r\n');
+      srcdsChild.write('\r\nquit\r\n');
       srcdsChild.onExit((exit) => {
         return resolve(exit);
       });
@@ -780,10 +784,17 @@ function updateValidate(appid, validate) {
     });
 
     // When steamcmd outputs, output it to console
-    steamcmdChild.onData((data) => {
-      data = data.toString().replace('\r\n', '\n');
-      process.stdout.write(`[${timestamp()}]  ${data}`);
-      srcds2wsPipe.push(data);
+    steamcmdChild.onData((rawData) => {
+      rawData = rawData.toString();
+      var dataArray = rawData.split('\r\n');
+      for (let i = 0; i < dataArray.length; i++) {
+        // eslint-disable-next-line security/detect-object-injection
+        var data = dataArray[i];
+        if (data != '') {
+          process.stdout.write(`[${timestamp()}]  ${data}\n`);
+          srcds2wsPipe.push(data);
+        }
+      }
     });
 
     // When steamcmd is done, return the exitcode
