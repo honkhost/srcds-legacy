@@ -19,7 +19,6 @@ import { default as pidusage } from 'pidusage';
 import { default as why } from 'why-is-node-running';
 
 console.log(`
-
  _                    _     _                  _                    
 | |                  | |   | |                | |                   
 | |__    ___   _ __  | | __| |__    ___   ___ | |_      __ _   __ _ 
@@ -28,11 +27,10 @@ console.log(`
 |_| |_| \\___/ |_| |_||_|\\_\\|_| |_| \\___/ |___/ \\__|(_) \\__, | \\__, |
                                                         __/ |  __/ |
                                                        |___/  |___/ 
-
 `);
 
-console.log(`--- Logs begin at ${timestamp()} ---`);
-console.error(`--- Logs begin at ${timestamp()} ---`);
+console.log(`--- Logs begin at ${timestamp()} ---\n\n`);
+console.error(`--- Logs begin at ${timestamp()} ---\n\n`);
 
 //
 // Globals
@@ -689,7 +687,9 @@ function spawnSrcds() {
             });
         }
       } catch (error) {
-        clog.error(error);
+        if (error.message != "Cannot read properties of undefined (reading 'pid')") {
+          clog.error(error);
+        }
       }
     });
     return srcdsChild;
@@ -755,7 +755,6 @@ function updateValidate(appid, validate) {
     }
 
     // Spawn steamcmd
-
     console.log(`[${timestamp()}]  Spawning steamcmd to update/validate`);
     const steamcmdChild = pty.spawn(`${steamcmdDir}/steamcmd.sh`, steamcmdCommandLine, {
       handleFlowControl: true,
@@ -839,8 +838,9 @@ function checkCreateAutoExec() {
 
 echo "--- start autoexec.cfg ---"
 
-// Ensure we connect to the GC's
+// Ensure we can be considered a real server
 sv_lan "0"
+
 // Disable in-engine upload/download, enable fast-dl
 sv_allowupload "0"
 sv_allowdownload "0"
@@ -848,16 +848,15 @@ sv_downloadurl "${srcdsConfig.fastDLUrl}"
 
 // User ban - Server banlist based on user steam ID.
 exec banned_user.cfg
-
 // IP ban - Server banlist based on user IP.
 exec banned_ip.cfg
 
 // Write ID - Writes a list of permanently-banned user IDs to banned_user.cfg.
 writeid
-
 // Write IP - Save the ban list to banned_ip.cfg.
 writeip
 
+// Tell the GC we're alive
 heartbeat
 
 echo "--- end autoexec.cfg ---"
