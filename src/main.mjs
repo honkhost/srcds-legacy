@@ -604,12 +604,12 @@ function spawnSrcds() {
             }, 30000); // 30 seconds
           }
 
-          var isStatsCommand = data.match(/st?a?t?s?$/);
+          var isStatsCommandPartial = data.match(/^(?:[sta]+)$|^(?:st?a?t?s?)$/);
           var isStatsHeader = data.match(statsHeaderRegex);
           var parsedStats = data.match(statsRegex);
           //var isStatsCommand = data.split(/\s+/).match(/s?t?a?ts$/);
           // TODO rework this, figure out the right regex
-          if (isStatsCommand || isStatsHeader || parsedStats) {
+          if (isStatsCommandPartial || isStatsHeader || parsedStats) {
             try {
               if (parsedStats || isStatsHeader) {
                 if (printStatsOutput) {
