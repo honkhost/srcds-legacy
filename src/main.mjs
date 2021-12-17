@@ -324,7 +324,7 @@ expressApp.get('/v1/healthcheck', async (request, response) => {
 // Keeps it from being hit by bots at least
 // And of course we auth it up above
 expressApp.ws('/v1/ws', (websocket, request) => {
-  const srcIP = request.headers['cf-connecting-ip'] || request.socket.remoteAddress;
+  const srcIP = request.headers['x-forwarded-for'].split(',')[0] || request.socket.remoteAddress;
   console.log(`[${timestamp()}]  [websocket console] Connected from IP ${srcIP}`);
   // websocket.write('HTTP/1.1 200 OK\r\n');
   websocket.on('message', (message) => {
