@@ -604,11 +604,9 @@ function spawnSrcds() {
             }, 30000); // 30 seconds
           }
 
-          var isStatsCommandPartial = data.match(/^(?:[sta]+)$|^(?:st?a?t?s?)$/);
-          var isStatsHeader = data.match(statsHeaderRegex);
+          const isStatsCommandPartial = data.match(/^(?:[sta]+)$|^(?:st?a?t?s?)$/);
+          const isStatsHeader = data.match(statsHeaderRegex);
           var parsedStats = data.match(statsRegex);
-          //var isStatsCommand = data.split(/\s+/).match(/s?t?a?ts$/);
-          // TODO rework this, figure out the right regex
           if (isStatsCommandPartial || isStatsHeader || parsedStats) {
             try {
               if (parsedStats || isStatsHeader) {
@@ -848,7 +846,7 @@ function parseBool(string) {
 }
 
 function checkCreateAutoExec() {
-  const autoExecPath = path.normalize(`${serverFilesDir}/csgo/cfg`);
+  const autoExecPath = path.normalize(`${serverFilesDir}/${srcdsConfig.game}/cfg`);
   const autoExecFile = path.normalize(`${autoExecPath}/autoexec.cfg`);
   const autoExecTemplate = `
 
@@ -857,7 +855,7 @@ function checkCreateAutoExec() {
 
 echo "--- start autoexec.cfg ---"
 
-// Ensure we can be considered a real server
+// Ensure we can be considered a real server by the GCs
 sv_lan "0"
 
 // Disable in-engine upload/download, enable fast-dl
@@ -890,7 +888,7 @@ echo "--- end autoexec.cfg ---"
   if (!fs.existsSync(autoExecFile)) {
     // eslint-disable-next-line security/detect-non-literal-fs-filename
     fs.writeFileSync(autoExecFile, autoExecTemplate, (error) => {
-      if (error) throw error;
+      if (error) clog.error(error);
       clog.debug('autoexec created');
       return;
     });
