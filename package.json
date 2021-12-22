@@ -21,7 +21,6 @@
   },
   "homepage": "https://git.honkhost.gg/honkhost/srcds/csgo",
   "dependencies": {
-    "async-lock": "^1.3.0",
     "ee-log": "github:epers/ee-log",
     "express": "^4.17.1",
     "express-ws": "^5.0.2",

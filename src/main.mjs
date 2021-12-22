@@ -11,7 +11,6 @@ import { default as fs } from 'fs';
 // External
 import { default as clog } from 'ee-log';
 import { default as pty } from 'node-pty';
-import { default as Lock } from 'async-lock';
 import { default as express } from 'express';
 import { default as expressWS } from 'express-ws';
 import { default as prometheus } from 'prom-client';
@@ -62,11 +61,12 @@ const httpProxy = process.env.SRCDS_HTTP_PROXY || '';
 const startupValidate = parseBool(process.env.SRCDS_STARTUP_VALIDATE) || false;
 
 // Websocket token
-var staticWSToken =
-  `Bearer ${process.env.SRCDS_WS_STATIC_TOKEN}` || `Bearer ${crypto.randomBytes(128).toString('base64')}`;
+var staticConsoleToken =
+  `Bearer ${process.env.SRCDS_CONSOLE_STATIC_TOKEN}` || `Bearer ${crypto.randomBytes(128).toString('base64')}`;
 
-// Locking - not strictly necessary, but nice to have
-var lock = new Lock();
+// Websocket token
+var staticMetricsToken =
+  `Bearer ${process.env.METRICS_STATIC_TOKEN}` || `Bearer ${crypto.randomBytes(128).toString('base64')}`;
 
 // Placeholder for our child
 // TODO: don't think we need this here
@@ -77,15 +77,16 @@ var shutdownInProgress = false;
 var updateInProgress = false;
 var restartInProgress = false;
 
+// Print output from 'stats' command
+// This is toggled back and forth by the metrics poller
+var printStatsOutput = false;
+
 // Streams to pipe up the websocket to srcds / steamcmd
 const ws2srcdsPipe = new Stream.Readable();
 ws2srcdsPipe._read = () => {};
 
 const srcds2wsPipe = new Stream.Readable();
 srcds2wsPipe._read = () => {};
-
-// Print output from 'stats' command
-var printStatsOutput = parseBool(process.env.SRCDS_PRINT_STATS) || false;
 
 // Regex to match output of 'stats' command
 // eslint-disable-next-line no-useless-escape,security/detect-unsafe-regex
@@ -280,11 +281,11 @@ expressWS(expressApp, null, {
         if (auth(token)) {
           return callback(true);
         } else {
-          clog.debug(info.req.headers['authorization'], staticWSToken);
+          clog.debug(info.req.headers['authorization'], staticConsoleToken);
           return callback(false, 401, 'Unauthorized');
         }
       } catch (error) {
-        clog.debug(info.req.headers['authorization'], staticWSToken);
+        clog.debug(info.req.headers['authorization'], staticConsoleToken);
         return callback(false, 401, 'Unauthorized');
       }
     },
@@ -307,6 +308,23 @@ expressApp.use(/\/((?!metrics|healthcheck).)*/, (request, response, next) => {
   }
 });
 
+expressApp.use('/v1/metrics', (request, response, next) => {
+  const token = request.headers['authorization'];
+  // Do some auth
+  try {
+    if (metricsAuth(token)) {
+      return next();
+    } else {
+      clog.error(request.headers);
+      response.status(401).send('Unauthorized');
+    }
+  } catch (error) {
+    clog.error(error);
+    clog.error(request.headers);
+    response.status(401).send('Unauthorized');
+  }
+});
+
 // We declare this as a var here so we can shutdown the connection when srcds exits
 const expressServer = expressApp.listen(3000);
 
@@ -315,7 +333,7 @@ expressApp.get('/v1/metrics', async (request, response) => {
   response.send(toSend);
 });
 
-expressApp.get('/v1/healthcheck', async (request, response) => {
+expressApp.get('/v1/healthcheck', (request, response) => {
   response.send('ok');
 });
 
@@ -418,7 +436,17 @@ process.on('SIGINT', () => {
 function auth(token) {
   if (typeof token === undefined || !token || token.length === 0) {
     return false;
-  } else if (crypto.timingSafeEqual(Buffer.from(token), Buffer.from(staticWSToken))) {
+  } else if (crypto.timingSafeEqual(Buffer.from(token), Buffer.from(staticConsoleToken))) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
+function metricsAuth(token) {
+  if (typeof token === undefined || !token || token.length === 0) {
+    return false;
+  } else if (crypto.timingSafeEqual(Buffer.from(token), Buffer.from(staticMetricsToken))) {
     return true;
   } else {
     return false;
@@ -435,275 +463,268 @@ function auth(token) {
 // Cleanup when shutdown is in progress
 // Listen on a websocket for console
 function spawnSrcds() {
-  const gameLockStatus = lock.isBusy('game');
-  const updateLockStatus = lock.isBusy('update');
-  if (gameLockStatus) {
-    // Locked somehow, bail out early
-    throw new Error(`Locked: Game ${gameLockStatus}; Update ${updateLockStatus}`);
-  } else {
-    // Spawn srcds
-    metrics.uptime.set(Number(0));
+  // Spawn srcds
+  metrics.uptime.set(Number(0));
 
-    if (debug) clog.debug(`Spawning srcds at ${serverFilesDir}/srcds_linux with options`, srcdsCommandLine);
+  // if (debug) clog.debug(`Spawning srcds at ${serverFilesDir}/srcds_linux with options`, srcdsCommandLine);
 
-    console.log(`[${timestamp()}]  Spawning srcds at ${serverFilesDir}/srcds_linux:`);
-    srcdsChild = pty.spawn(`${serverFilesDir}/srcds_linux`, srcdsCommandLine, {
-      handleFlowControl: true,
-      cwd: serverFilesDir,
-      env: {
-        LD_LIBRARY_PATH: `${serverFilesDir}:${serverFilesDir}/bin`,
-        PATH: `${steamcmdDir}:${serverFilesDir}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`,
-        HOME: homeDir,
-        SRCDS_DIR: serverFilesDir,
-        PWD: serverFilesDir,
-        http_proxy: httpProxy,
-      },
+  console.log(`[${timestamp()}]  Spawning srcds at ${serverFilesDir}/srcds_linux:`);
+  srcdsChild = pty.spawn(`${serverFilesDir}/srcds_linux`, srcdsCommandLine, {
+    handleFlowControl: true,
+    cwd: serverFilesDir,
+    env: {
+      LD_LIBRARY_PATH: `${serverFilesDir}:${serverFilesDir}/bin`,
+      PATH: `${steamcmdDir}:${serverFilesDir}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`,
+      HOME: homeDir,
+      SRCDS_DIR: serverFilesDir,
+      PWD: serverFilesDir,
+      http_proxy: httpProxy,
+    },
+  });
+
+  metrics.status.set(Number(1));
+
+  ws2srcdsPipe.on('data', (data) => {
+    data = data.toString();
+
+    console.log(`[${timestamp()}]  [websocket console] ${data}`);
+    srcdsChild.write(data);
+  });
+
+  expressApp.post('/v1/restart', (request, response) => {
+    restartInProgress = true;
+    const jobUid = crypto.randomBytes(8).toString('hex');
+    const jobUrl = `https://${request.hostname}${request.headers['x-forwarded-prefix']}/v1/job/${jobUid}`;
+    var jobStatus = 'running';
+    response.send({
+      jobUrl: jobUrl,
+      jobUid: jobUid,
     });
-
-    metrics.status.set(Number(1));
-
-    ws2srcdsPipe.on('data', (data) => {
-      data = data.toString();
-
-      console.log(`[${timestamp()}]  [websocket console] ${data}`);
-      srcdsChild.write(data);
-    });
-
-    expressApp.post('/v1/restart', (request, response) => {
-      restartInProgress = true;
-      const jobUid = crypto.randomBytes(8).toString('hex');
-      const jobUrl = `https://${request.hostname}${request.headers['x-forwarded-prefix']}/v1/job/${jobUid}`;
-      var jobStatus = 'running';
-      response.send({
-        jobUrl: jobUrl,
-        jobUid: jobUid,
-      });
-      shutdownSrcds(srcdsChild, 'RESTART')
-        .then(() => {
-          spawnSrcds();
-          jobStatus = 'complete';
-          restartInProgress = false;
-          // response.send('complete');
-          return;
-        })
-        .catch((error) => {
-          throw error;
-        });
-      expressApp.get(`/v1/job/${jobUid}`, (request, response) => {
-        response.send(jobStatus);
-      });
-    });
-
-    expressApp.post('/v1/update', (request, response) => {
-      restartInProgress = true;
-      const jobUid = crypto.randomBytes(8).toString('hex');
-      const jobUrl = `https://${request.hostname}${request.headers['x-forwarded-prefix']}/v1/job/${jobUid}`;
-      var jobStatus = 'running';
-      response.send({
-        jobUrl: jobUrl,
-        jobUid: jobUid,
-      });
-      shutdownSrcds(srcdsChild, 'UPDATE')
-        .then(() => {
-          // eslint-disable-next-line promise/no-nesting
-          updateValidate(srcdsConfig.appid, false)
-            .then(() => {
-              spawnSrcds();
-              restartInProgress = false;
-              jobStatus = 'complete';
-              return;
-            })
-            .catch((error) => {
-              throw error;
-            });
-
-          return;
-        })
-        .catch((error) => {
-          throw error;
-        });
-      expressApp.get(`/v1/job/${jobUid}`, (request, response) => {
-        response.send(jobStatus);
-      });
-    });
-
-    expressApp.post('/v1/validate', (request, response) => {
-      restartInProgress = true;
-      const jobUid = crypto.randomBytes(8).toString('hex');
-      const jobUrl = `https://${request.hostname}${request.headers['x-forwarded-prefix']}/v1/job/${jobUid}`;
-      var jobStatus = 'running';
-      response.send({
-        jobUrl: jobUrl,
-        jobUid: jobUid,
-      });
-      shutdownSrcds(srcdsChild, 'RESTART')
-        .then(() => {
-          // eslint-disable-next-line promise/no-nesting
-          updateValidate(srcdsConfig.appid, true)
-            .then(() => {
-              spawnSrcds();
-              restartInProgress = false;
-              jobStatus = 'complete';
-              return;
-            })
-            .catch((error) => {
-              throw error;
-            });
-          return;
-        })
-        .catch((error) => {
-          throw error;
-        });
-      expressApp.get(`/v1/job/${jobUid}`, (request, response) => {
-        response.send(jobStatus);
-      });
-    });
-
-    // Metrics
-    const statsInterval = setInterval(() => {
-      printStatsOutput = false;
-      srcdsChild.write('stats\r\n');
-      pidusage(srcdsChild.pid, (error, stats) => {
-        metrics.real_cpu.set(Number(stats.cpu));
-        metrics.memory.set(Number(stats.memory));
-      });
-      statsEventRx.once('complete', async () => {
-        printStatsOutput = true;
-      });
-    }, 15000);
-
-    // Forward stdout from srcds to our own
-    // TODO: refactor this, too many conditionals, has to be a better way
-    srcdsChild.onData((rawData) => {
-      rawData = rawData.toString();
-      var dataArray = rawData.split('\r\n');
-      for (let i = 0; i < dataArray.length; i++) {
-        // eslint-disable-next-line security/detect-object-injection
-        var data = dataArray[i];
-        if (data != '') {
-          // If we see "MasterRequestRestart" and autoupdate is enabled, trigger an update
-          // eslint-disable-next-line prettier/prettier
-          if (data === updateRequiredString && autoUpdate === 'true' && updateInProgress === false) {
-            updateInProgress = true;
-            const msg1 = `\n--- [${timestamp()}]  Server update required ---\n`;
-            const msg2 = `\n--- [${timestamp()}]  Server will restart for update in 30 seconds ---\n`
-            process.stdout.write(msg1);
-            process.stdout.write(msg2);
-            srcds2wsPipe.push(msg1);
-            srcds2wsPipe.push(msg2);
-            srcdsChild.write(`\r\nsay Server update required\r\n`, 'utf8');
-            srcdsChild.write(`\r\nsay Server will restart for update in 30 seconds\r\n`, 'utf8');
-            setTimeout(() => {
-              shutdownSrcds(srcdsChild, 'UPDATE')
-                .then(() => {
-                  return;
-                })
-                .catch((error) => {
-                  throw error;
-                });
-            }, 30000); // 30 seconds
-          }
-
-          const isStatsCommandPartial = data.match(/^(?:[sta]+)$|^(?:st?a?t?s?)$/);
-          const isStatsHeader = data.match(statsHeaderRegex);
-          var parsedStats = data.match(statsRegex);
-          if (isStatsCommandPartial || isStatsHeader || parsedStats) {
-            try {
-              if (parsedStats || isStatsHeader) {
-                if (printStatsOutput) {
-                  process.stdout.write(`[${timestamp()}]  ${data}\n`);
-                  srcds2wsPipe.push(data);
-                }
-                if (parsedStats) {
-                  parsedStats = parsedStats[0].split(/\s+/);
-                  // TODO drop the first and last elements, adjust below as necessary
-                  metrics.status.set(Number(1));
-                  metrics.cpu.set(Number(parsedStats[1]));
-                  metrics.netin.set(Number(parsedStats[2]));
-                  metrics.netout.set(Number(parsedStats[3]));
-                  metrics.uptime.set(Number(parsedStats[4]));
-                  metrics.maps.set(Number(parsedStats[5]));
-                  metrics.fps.set(Number(parsedStats[6]));
-                  metrics.players.set(Number(parsedStats[7]));
-                  metrics.svms.set(Number(parsedStats[8]));
-                  metrics.varms.set(Number(parsedStats[9]));
-                  metrics.tick.set(Number(parsedStats[10]));
-                  statsEventRx.emit('complete', null);
-                }
-              }
-            } catch (error) {
-              clog.error(error);
-              // log and no-op
-            }
-          } else {
-            process.stdout.write(`[${timestamp()}]  ${data}\n`);
-            srcds2wsPipe.push(data);
-          }
-        }
-      }
-    });
-
-    // When srcds exits
-    srcdsChild.onExit((exit) => {
-      console.log(
-        `\n\n[${timestamp()}]  srcds_linux exited with code ${exit.exitCode} because of signal ${exit.signal}\n\n`,
-      );
-      metrics.status.set(Number(0));
-      // Do some cleanup
-      srcdsChild.removeAllListeners();
-      srcdsChild = undefined;
-      // If we're shutting down, no-op and exit (other sigterm handler will finish cleanup for us)
-      if (shutdownInProgress) {
-        expressServer.close();
-        clearInterval(statsInterval);
-        ws2srcdsPipe.removeAllListeners();
+    shutdownSrcds(srcdsChild, 'RESTART')
+      .then(() => {
+        spawnSrcds();
+        jobStatus = 'complete';
+        restartInProgress = false;
+        // response.send('complete');
         return;
-      } else if (restartInProgress) {
-        // Someone else is handling restart for us, no-op
-        clearInterval(statsInterval);
-        ws2srcdsPipe.removeAllListeners();
-        return;
-      } else {
-        // Otherwise, check for an update and restart srcds
-        clearInterval(statsInterval);
-        ws2srcdsPipe.removeAllListeners();
+      })
+      .catch((error) => {
+        throw error;
+      });
+    expressApp.get(`/v1/job/${jobUid}`, (request, response) => {
+      response.send(jobStatus);
+    });
+  });
+
+  expressApp.post('/v1/update', (request, response) => {
+    restartInProgress = true;
+    const jobUid = crypto.randomBytes(8).toString('hex');
+    const jobUrl = `https://${request.hostname}${request.headers['x-forwarded-prefix']}/v1/job/${jobUid}`;
+    var jobStatus = 'running';
+    response.send({
+      jobUrl: jobUrl,
+      jobUid: jobUid,
+    });
+    shutdownSrcds(srcdsChild, 'UPDATE')
+      .then(() => {
+        // eslint-disable-next-line promise/no-nesting
         updateValidate(srcdsConfig.appid, false)
           .then(() => {
             spawnSrcds();
+            restartInProgress = false;
+            jobStatus = 'complete';
+            return;
+          })
+          .catch((error) => {
+            throw error;
+          });
+
+        return;
+      })
+      .catch((error) => {
+        throw error;
+      });
+    expressApp.get(`/v1/job/${jobUid}`, (request, response) => {
+      response.send(jobStatus);
+    });
+  });
+
+  expressApp.post('/v1/validate', (request, response) => {
+    restartInProgress = true;
+    const jobUid = crypto.randomBytes(8).toString('hex');
+    const jobUrl = `https://${request.hostname}${request.headers['x-forwarded-prefix']}/v1/job/${jobUid}`;
+    var jobStatus = 'running';
+    response.send({
+      jobUrl: jobUrl,
+      jobUid: jobUid,
+    });
+    shutdownSrcds(srcdsChild, 'RESTART')
+      .then(() => {
+        // eslint-disable-next-line promise/no-nesting
+        updateValidate(srcdsConfig.appid, true)
+          .then(() => {
+            spawnSrcds();
+            restartInProgress = false;
+            jobStatus = 'complete';
+            return;
+          })
+          .catch((error) => {
+            throw error;
+          });
+        return;
+      })
+      .catch((error) => {
+        throw error;
+      });
+    expressApp.get(`/v1/job/${jobUid}`, (request, response) => {
+      response.send(jobStatus);
+    });
+  });
+
+  // Metrics
+  const statsInterval = setInterval(() => {
+    printStatsOutput = false;
+    srcdsChild.write('stats\r\n');
+    pidusage(srcdsChild.pid, (error, stats) => {
+      metrics.real_cpu.set(Number(stats.cpu));
+      metrics.memory.set(Number(stats.memory));
+    });
+    statsEventRx.once('complete', async () => {
+      printStatsOutput = true;
+    });
+  }, 15000);
+
+  // Forward stdout from srcds to our own
+  // TODO: refactor this, too many conditionals, has to be a better way
+  srcdsChild.onData((rawData) => {
+    rawData = rawData.toString();
+    var dataArray = rawData.split('\r\n');
+    for (let i = 0; i < dataArray.length; i++) {
+      // eslint-disable-next-line security/detect-object-injection
+      var data = dataArray[i];
+      if (data != '') {
+        // If we see "MasterRequestRestart" and autoupdate is enabled, trigger an update
+        // eslint-disable-next-line prettier/prettier
+          if (data === updateRequiredString && autoUpdate === 'true' && updateInProgress === false) {
+          updateInProgress = true;
+          const msg1 = `\n--- [${timestamp()}]  Server update required ---\n`;
+          const msg2 = `\n--- [${timestamp()}]  Server will restart for update in 30 seconds ---\n`;
+          process.stdout.write(msg1);
+          process.stdout.write(msg2);
+          srcds2wsPipe.push(msg1);
+          srcds2wsPipe.push(msg2);
+          srcdsChild.write(`\r\nsay Server update required\r\n`, 'utf8');
+          srcdsChild.write(`\r\nsay Server will restart for update in 30 seconds\r\n`, 'utf8');
+          setTimeout(() => {
+            shutdownSrcds(srcdsChild, 'UPDATE')
+              .then(() => {
+                return;
+              })
+              .catch((error) => {
+                throw error;
+              });
+          }, 30000); // 30 seconds
+        }
+
+        const isStatsCommandPartial = data.match(/^(?:[sta]+)$|^(?:st?a?t?s?)$/);
+        const isStatsHeader = data.match(statsHeaderRegex);
+        var parsedStats = data.match(statsRegex);
+        if (isStatsCommandPartial || isStatsHeader || parsedStats) {
+          try {
+            if (parsedStats || isStatsHeader) {
+              if (printStatsOutput) {
+                process.stdout.write(`[${timestamp()}]  ${data}\n`);
+                srcds2wsPipe.push(data);
+              }
+              if (parsedStats) {
+                parsedStats = parsedStats[0].split(/\s+/);
+                // TODO drop the first and last elements, adjust below as necessary
+                metrics.status.set(Number(1));
+                metrics.cpu.set(Number(parsedStats[1]));
+                metrics.netin.set(Number(parsedStats[2]));
+                metrics.netout.set(Number(parsedStats[3]));
+                metrics.uptime.set(Number(parsedStats[4]));
+                metrics.maps.set(Number(parsedStats[5]));
+                metrics.fps.set(Number(parsedStats[6]));
+                metrics.players.set(Number(parsedStats[7]));
+                metrics.svms.set(Number(parsedStats[8]));
+                metrics.varms.set(Number(parsedStats[9]));
+                metrics.tick.set(Number(parsedStats[10]));
+                statsEventRx.emit('complete', null);
+              }
+            }
+          } catch (error) {
+            clog.error(error);
+            // log and no-op
+          }
+        } else {
+          process.stdout.write(`[${timestamp()}]  ${data}\n`);
+          srcds2wsPipe.push(data);
+        }
+      }
+    }
+  });
+
+  // When srcds exits
+  srcdsChild.onExit((exit) => {
+    console.log(
+      `\n\n[${timestamp()}]  srcds_linux exited with code ${exit.exitCode} because of signal ${exit.signal}\n\n`,
+    );
+    metrics.status.set(Number(0));
+    // Do some cleanup
+    srcdsChild.removeAllListeners();
+    srcdsChild = undefined;
+    // If we're shutting down, no-op and exit (other sigterm handler will finish cleanup for us)
+    if (shutdownInProgress) {
+      expressServer.close();
+      clearInterval(statsInterval);
+      ws2srcdsPipe.removeAllListeners();
+      return;
+    } else if (restartInProgress) {
+      // Someone else is handling restart for us, no-op
+      clearInterval(statsInterval);
+      ws2srcdsPipe.removeAllListeners();
+      return;
+    } else {
+      // Otherwise, check for an update and restart srcds
+      clearInterval(statsInterval);
+      ws2srcdsPipe.removeAllListeners();
+      updateValidate(srcdsConfig.appid, false)
+        .then(() => {
+          spawnSrcds();
+          return;
+        })
+        .catch((error) => {
+          throw error;
+        });
+    }
+  });
+
+  // Initial sigterm handler
+  // Set shutdownInProgress flag
+  // Shutdown srcds cleanly
+  process.on('SIGTERM', () => {
+    console.log(`\n\n[${timestamp()}]  SIGTERM received, shutting down \n\n`);
+    shutdownInProgress = true;
+    ws2srcdsPipe.removeAllListeners();
+    clearInterval(statsInterval);
+    try {
+      if (typeof srcdsChild.pid === 'number') {
+        shutdownSrcds(srcdsChild, 'SIGTERM')
+          .then(() => {
             return;
           })
           .catch((error) => {
             throw error;
           });
       }
-    });
-
-    // Initial sigterm handler
-    // Set shutdownInProgress flag
-    // Shutdown srcds cleanly
-    process.on('SIGTERM', () => {
-      console.log(`\n\n[${timestamp()}]  SIGTERM received, shutting down \n\n`);
-      shutdownInProgress = true;
-      ws2srcdsPipe.removeAllListeners();
-      clearInterval(statsInterval);
-      try {
-        if (typeof srcdsChild.pid === 'number') {
-          shutdownSrcds(srcdsChild, 'SIGTERM')
-            .then(() => {
-              return;
-            })
-            .catch((error) => {
-              throw error;
-            });
-        }
-      } catch (error) {
-        if (error.message != "Cannot read properties of undefined (reading 'pid')") {
-          clog.error(error);
-        }
+    } catch (error) {
+      if (error.message != "Cannot read properties of undefined (reading 'pid')") {
+        clog.error(error);
       }
-    });
-    return srcdsChild;
-  }
+    }
+  });
+  return srcdsChild;
 }
 
 // Shutdown SRCDS
