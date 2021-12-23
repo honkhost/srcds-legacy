@@ -28,8 +28,8 @@ console.log(`
                                                        |___/  |___/ 
 `);
 
-console.log(`--- Logs begin at ${timestamp()} ---\n\n`);
-console.error(`--- Logs begin at ${timestamp()} ---\n\n`);
+console.log(`\n\n--- Logs begin at ${timestamp()} ---\n\n`);
+console.error(`\n\n--- Logs begin at ${timestamp()} ---\n\n`);
 
 //
 // Globals
