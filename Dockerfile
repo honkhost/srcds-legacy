@@ -40,4 +40,4 @@ ENV USER=container \
   SRCDS_DEBUG_FAKE_STALE=""
 
 WORKDIR /dist
-ENTRYPOINT ["node", "main.mjs"]
+ENTRYPOINT ["node", "--trace-warnings", "main.mjs"]
