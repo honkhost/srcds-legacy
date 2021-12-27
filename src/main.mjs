@@ -1,5 +1,8 @@
 'use strict';
 
+console.log(`\n\n--- Logs begin at ${timestamp()} ---\n\n`);
+console.error(`\n\n--- Logs begin at ${timestamp()} ---\n\n`);
+
 // Imports
 // Built-ins
 import { default as path } from 'path';
@@ -12,9 +15,11 @@ import { default as fs } from 'fs';
 import { default as clog } from 'ee-log';
 import { default as pty } from 'node-pty';
 import { default as express } from 'express';
-import { default as expressWS } from 'express-ws';
+import { default as session } from 'express-session';
+import { tinyws } from 'tinyws';
 import { default as prometheus } from 'prom-client';
 import { default as pidusage } from 'pidusage';
+import { default as Keycloak } from 'keycloak-connect';
 import { default as why } from 'why-is-node-running';
 
 console.log(`
@@ -27,9 +32,6 @@ console.log(`
                                                         __/ |  __/ |
                                                        |___/  |___/ 
 `);
-
-console.log(`\n\n--- Logs begin at ${timestamp()} ---\n\n`);
-console.error(`\n\n--- Logs begin at ${timestamp()} ---\n\n`);
 
 //
 // Globals
@@ -272,41 +274,37 @@ prometheusRegistry.setDefaultLabels({
 
 //
 // Setup express
-var expressApp = express();
-expressWS(expressApp, null, {
-  wsOptions: {
-    verifyClient: (info, callback) => {
-      const token = info.req.headers['authorization'];
-      try {
-        if (auth(token)) {
-          return callback(true);
-        } else {
-          clog.debug(info.req.headers['authorization'], staticConsoleToken);
-          return callback(false, 401, 'Unauthorized');
-        }
-      } catch (error) {
-        clog.debug(info.req.headers['authorization'], staticConsoleToken);
-        return callback(false, 401, 'Unauthorized');
-      }
-    },
-  },
-});
 
-expressApp.use(/\/((?!metrics|healthcheck).)*/, (request, response, next) => {
-  const token = request.headers['authorization'];
-  try {
-    if (auth(token)) {
-      return next();
-    } else {
-      clog.error(request.headers);
-      response.status(401).send('Unauthorized');
-    }
-  } catch (error) {
-    clog.error(error);
-    clog.error(request.headers);
-    response.status(401).send('Unauthorized');
-  }
-});
+// Keycloak stuff
+Keycloak.prototype.redirectToLogin = (request) => {
+  var dashReqMatcher = /\/dash\//i;
+  return dashReqMatcher.test(request.originalUrl || request.url);
+};
+
+const keycloakConfig = {
+  'realm': 'honkhost.dev',
+  'bearer-only': true,
+  'auth-server-url': 'https://honkhost.dev/auth/',
+  'ssl-required': 'external',
+  'resource': `instance.${ident}.gameserver`,
+  'verify-token-audience': true,
+  'use-resource-role-mappings': true,
+  'confidential-port': 0,
+};
+
+var keycloak = new Keycloak(
+  {
+    secret: crypto.randomBytes(128).toString('base64'),
+    resave: false,
+    saveUninitialized: false,
+  },
+  keycloakConfig,
+);
+
+var expressApp = express();
+expressApp.set('trust proxy', true);
+
+expressApp.use(keycloak.middleware());
 
 expressApp.use('/v1/metrics', (request, response, next) => {
   const token = request.headers['authorization'];
@@ -315,12 +313,10 @@ expressApp.use('/v1/metrics', (request, response, next) => {
     if (metricsAuth(token)) {
       return next();
     } else {
-      clog.error(request.headers);
       response.status(401).send('Unauthorized');
     }
   } catch (error) {
     clog.error(error);
-    clog.error(request.headers);
     response.status(401).send('Unauthorized');
   }
 });
@@ -341,50 +337,62 @@ expressApp.get('/v1/healthcheck', (request, response) => {
 // We "hide" the route as /ws/${ident}
 // Keeps it from being hit by bots at least
 // And of course we auth it up above
-expressApp.ws('/v1/ws', (websocket, request) => {
-  const srcIP = request.headers['x-forwarded-for'].split(',')[0] || request.socket.remoteAddress;
-  console.log(`[${timestamp()}]  [websocket console] Connected from IP ${srcIP}`);
-  // websocket.write('HTTP/1.1 200 OK\r\n');
-  websocket.on('message', (message) => {
-    // Take incoming websocket messages and dump them to srcdsChild
-    console.error('Websocket message: ' + message.toString());
-    ws2srcdsPipe.push(message.toString() + '\n');
-  });
-  // Take incoming stdout from srcdsChild and dump it to the websocket
-  srcds2wsPipe.on('data', (data) => {
-    data = data.toString();
-    websocket.send(data);
-  });
-  websocket.on('close', () => {
-    clog.debug('Websocket connection closed');
-    websocket.removeAllListeners();
-  });
-
-  // When we get sigterm and a websocket is open:
-  // Start a 1 second interval to check again
-  // If srcds is exited, close the websocket
-  // TODO: upper limit
-  process.on('SIGTERM', () => {
-    const interval = setInterval(() => {
-      try {
-        if (typeof srcdsChild === 'undefined') {
-          clearInterval(interval);
-          websocket.close(1012, 'sigterm received');
-          console.error('closed websocket');
-        } else {
-          console.error('srcds still running, typeof srcdsChild:');
-          console.error(typeof srcdsChild);
-          // noop, continue waiting
-        }
-      } catch (error) {
-        clog.error(error);
-        clearInterval(interval);
-        websocket.close(1012, 'sigterm received');
-        console.error('closed websocket');
-      }
-    }, 1000);
-  });
-});
+// keycloak.protect(`instance.${ident}.gameserver:websocket`),
+expressApp.use(
+  '/v1/ws',
+  tinyws(),
+  keycloak.protect(`instance.${ident}.gameserver:websocket`),
+  async (request, response) => {
+    if (request.ws) {
+      const ws = await request.ws();
+      const srcIP = request.headers['x-forwarded-for'].split(',')[0] || request.socket.remoteAddress;
+      console.log(`[${timestamp()}]  [websocket console] Connected from IP ${srcIP}`);
+      ws.on('message', (message) => {
+        // Take incoming websocket messages and dump them to srcdsChild
+        console.error('Websocket message: ' + message.toString());
+        ws2srcdsPipe.push(message.toString() + '\n');
+      });
+      // Take incoming stdout from srcdsChild and dump it to the websocket
+      srcds2wsPipe.on('data', (data) => {
+        data = data.toString();
+        ws.send(data);
+      });
+      // When we get sigterm and a websocket is open:
+      // Start a 1 second interval to check again
+      // If srcds is exited, close the websocket
+      // TODO: upper limit
+      const websocketSigterm = () => {
+        const interval = setInterval(() => {
+          try {
+            if (typeof srcdsChild === 'undefined') {
+              clearInterval(interval);
+              ws.close(1012, 'sigterm received');
+              console.error('closed websocket');
+            } else {
+              console.error('srcds still running, typeof srcdsChild:');
+              console.error(typeof srcdsChild);
+              // noop, continue waiting
+            }
+          } catch (error) {
+            clog.error(error);
+            clearInterval(interval);
+            ws.close(1012, 'sigterm received');
+            console.error('closed websocket');
+          }
+        }, 1000);
+      };
+      ws.on('close', () => {
+        clog.debug('Websocket connection closed');
+        ws.removeAllListeners();
+        srcds2wsPipe.removeAllListeners();
+        process.removeListener('SIGTERM', websocketSigterm);
+      });
+      process.once('SIGTERM', websocketSigterm);
+    } else {
+      response.end();
+    }
+  },
+);
 
 //
 // End setup
@@ -431,18 +439,8 @@ process.on('SIGINT', () => {
 // Functions
 
 //
-// Auth
+// Metrics auth
 // Very basic for now
-function auth(token) {
-  if (typeof token === undefined || !token || token.length === 0) {
-    return false;
-  } else if (crypto.timingSafeEqual(Buffer.from(token), Buffer.from(staticConsoleToken))) {
-    return true;
-  } else {
-    return false;
-  }
-}
-
 function metricsAuth(token) {
   if (typeof token === undefined || !token || token.length === 0) {
     return false;
@@ -491,7 +489,7 @@ function spawnSrcds() {
     srcdsChild.write(data);
   });
 
-  expressApp.post('/v1/restart', (request, response) => {
+  expressApp.post('/v1/restart', keycloak.protect(`instance.${ident}.gameserver:restart`), (request, response) => {
     restartInProgress = true;
     const jobUid = crypto.randomBytes(8).toString('hex');
     const jobUrl = `https://${request.hostname}${request.headers['x-forwarded-prefix']}/v1/job/${jobUid}`;
@@ -516,7 +514,7 @@ function spawnSrcds() {
     });
   });
 
-  expressApp.post('/v1/update', (request, response) => {
+  expressApp.post('/v1/update', keycloak.protect(`instance.${ident}.gameserver:update`), (request, response) => {
     restartInProgress = true;
     const jobUid = crypto.randomBytes(8).toString('hex');
     const jobUrl = `https://${request.hostname}${request.headers['x-forwarded-prefix']}/v1/job/${jobUid}`;
@@ -549,7 +547,7 @@ function spawnSrcds() {
     });
   });
 
-  expressApp.post('/v1/validate', (request, response) => {
+  expressApp.post('/v1/validate', keycloak.protect(`instance.${ident}.gameserver:validate`), (request, response) => {
     restartInProgress = true;
     const jobUid = crypto.randomBytes(8).toString('hex');
     const jobUrl = `https://${request.hostname}${request.headers['x-forwarded-prefix']}/v1/job/${jobUid}`;
@@ -576,9 +574,13 @@ function spawnSrcds() {
       .catch((error) => {
         throw error;
       });
-    expressApp.get(`/v1/job/${jobUid}`, (request, response) => {
-      response.send(jobStatus);
-    });
+    expressApp.get(
+      `/v1/job/${jobUid}`,
+      keycloak.protect(`instance.${ident}.gameserver:read-job-status`),
+      (request, response) => {
+        response.send(jobStatus);
+      },
+    );
   });
 
   // Metrics
@@ -703,7 +705,7 @@ function spawnSrcds() {
   // Initial sigterm handler
   // Set shutdownInProgress flag
   // Shutdown srcds cleanly
-  process.on('SIGTERM', () => {
+  process.once('SIGTERM', () => {
     console.log(`\n\n[${timestamp()}]  SIGTERM received, shutting down \n\n`);
     shutdownInProgress = true;
     ws2srcdsPipe.removeAllListeners();
@@ -797,7 +799,7 @@ function updateValidate(appid, validate) {
     });
 
     // Handle SIGTERM when steamcmd is running
-    process.on('SIGTERM', () => {
+    process.once('SIGTERM', () => {
       shutdownInProgress = true;
       steamcmdChild.kill('SIGTERM');
     });
@@ -828,7 +830,7 @@ function updateValidate(appid, validate) {
       } else if (restartInProgress) {
         // Someone else is handling restart for us, no-op
         ws2srcdsPipe.removeAllListeners();
-        return;
+        return resolve('complete');
       } else if (code.exitCode === 0) {
         updateInProgress = false;
         return resolve('complete');
