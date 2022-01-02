@@ -15,12 +15,14 @@ import { default as fs } from 'fs';
 import { default as clog } from 'ee-log';
 import { default as pty } from 'node-pty';
 import { default as express } from 'express';
-import { default as session } from 'express-session';
+// Dunno why eslint hates this lib...
+// eslint-disable-next-line node/no-missing-import
 import { tinyws } from 'tinyws';
 import { default as prometheus } from 'prom-client';
 import { default as pidusage } from 'pidusage';
 import { default as Keycloak } from 'keycloak-connect';
 import { default as why } from 'why-is-node-running';
+import { default as Hookcord } from 'hookcord';
 
 console.log(`
  _                    _     _                  _                    
@@ -41,7 +43,9 @@ const debug = process.env.DEBUG || true;
 
 // Our identity - bail out really early if it isn't defined
 const ident = process.env.SRCDS_IDENT || '';
-if (ident === '') throw new Error('env var SRCDS_IDENT required');
+if (ident === '') throw new Error('env var SRCDS_IDENT required (uuidv4 recommended)');
+
+const shortname = process.env.SRCDS_SHORTNAME || ident.substr(0, 8);
 
 //
 // Baseline Directories
@@ -62,11 +66,7 @@ const httpProxy = process.env.SRCDS_HTTP_PROXY || '';
 // Force a validation of game files when starting/updating
 const startupValidate = parseBool(process.env.SRCDS_STARTUP_VALIDATE) || false;
 
-// Websocket token
-var staticConsoleToken =
-  `Bearer ${process.env.SRCDS_CONSOLE_STATIC_TOKEN}` || `Bearer ${crypto.randomBytes(128).toString('base64')}`;
-
-// Websocket token
+// Metrics token
 var staticMetricsToken =
   `Bearer ${process.env.METRICS_STATIC_TOKEN}` || `Bearer ${crypto.randomBytes(128).toString('base64')}`;
 
@@ -271,6 +271,17 @@ prometheusRegistry.setDefaultLabels({
 });
 
 // End monitoring setup
+
+//
+// Discord setup
+
+var discord = false;
+const discordWebookUrl = process.env.DISCORD_WEBHOOK_URL || false;
+if (discordWebookUrl) {
+  discord = new Hookcord.Hook().setLink(discordWebookUrl);
+}
+
+// End discord setup
 
 //
 // Setup express
@@ -481,6 +492,26 @@ function spawnSrcds() {
   });
 
   metrics.status.set(Number(1));
+  if (discord) {
+    discord
+      .setPayload({
+        username: 'Honkhost Alerting',
+        embeds: [
+          {
+            title: shortname,
+            description: 'Server Started',
+            timestamp: new Date(),
+          },
+        ],
+      })
+      .fire()
+      .then(() => {
+        return;
+      })
+      .catch((error) => {
+        clog.error(error);
+      });
+  }
 
   ws2srcdsPipe.on('data', (data) => {
     data = data.toString();
@@ -556,7 +587,7 @@ function spawnSrcds() {
       jobUrl: jobUrl,
       jobUid: jobUid,
     });
-    shutdownSrcds(srcdsChild, 'RESTART')
+    shutdownSrcds(srcdsChild, 'VALIDATE')
       .then(() => {
         // eslint-disable-next-line promise/no-nesting
         updateValidate(srcdsConfig.appid, true)
@@ -600,34 +631,33 @@ function spawnSrcds() {
   // TODO: refactor this, too many conditionals, has to be a better way
   srcdsChild.onData((rawData) => {
     rawData = rawData.toString();
+    // If we see "MasterRequestRestart" and autoupdate is enabled, trigger an update
+    if (rawData === updateRequiredString && autoUpdate === 'true' && updateInProgress === false) {
+      updateInProgress = true;
+      const msg1 = `\n--- [${timestamp()}]  Server update required ---\n`;
+      const msg2 = `\n--- [${timestamp()}]  Server will restart for update in 30 seconds ---\n`;
+      process.stdout.write(msg1);
+      process.stdout.write(msg2);
+      srcds2wsPipe.push(msg1);
+      srcds2wsPipe.push(msg2);
+      srcdsChild.write(`\r\nsay Server update required\r\n`, 'utf8');
+      srcdsChild.write(`\r\nsay Server will restart for update in 30 seconds\r\n`, 'utf8');
+      setTimeout(() => {
+        shutdownSrcds(srcdsChild, 'UPDATE')
+          .then(() => {
+            return;
+          })
+          .catch((error) => {
+            throw error;
+          });
+      }, 30000); // 30 seconds
+    }
+
     var dataArray = rawData.split('\r\n');
     for (let i = 0; i < dataArray.length; i++) {
       // eslint-disable-next-line security/detect-object-injection
       var data = dataArray[i];
       if (data != '') {
-        // If we see "MasterRequestRestart" and autoupdate is enabled, trigger an update
-        // eslint-disable-next-line prettier/prettier
-          if (data === updateRequiredString && autoUpdate === 'true' && updateInProgress === false) {
-          updateInProgress = true;
-          const msg1 = `\n--- [${timestamp()}]  Server update required ---\n`;
-          const msg2 = `\n--- [${timestamp()}]  Server will restart for update in 30 seconds ---\n`;
-          process.stdout.write(msg1);
-          process.stdout.write(msg2);
-          srcds2wsPipe.push(msg1);
-          srcds2wsPipe.push(msg2);
-          srcdsChild.write(`\r\nsay Server update required\r\n`, 'utf8');
-          srcdsChild.write(`\r\nsay Server will restart for update in 30 seconds\r\n`, 'utf8');
-          setTimeout(() => {
-            shutdownSrcds(srcdsChild, 'UPDATE')
-              .then(() => {
-                return;
-              })
-              .catch((error) => {
-                throw error;
-              });
-          }, 30000); // 30 seconds
-        }
-
         const isStatsCommandPartial = data.match(/^(?:[sta]+)$|^(?:st?a?t?s?)$/);
         const isStatsHeader = data.match(statsHeaderRegex);
         var parsedStats = data.match(statsRegex);
@@ -672,6 +702,27 @@ function spawnSrcds() {
     console.log(
       `\n\n[${timestamp()}]  srcds_linux exited with code ${exit.exitCode} because of signal ${exit.signal}\n\n`,
     );
+    if (discord) {
+      discord
+        .setPayload({
+          username: 'Honkhost Alerting',
+          embeds: [
+            {
+              title: shortname,
+              description: `Server Exited with code ${exit.exitCode}`,
+              timestamp: new Date(),
+            },
+          ],
+        })
+        .fire()
+        .then(() => {
+          return;
+        })
+        .catch((error) => {
+          clog.error(error);
+        });
+    }
+
     metrics.status.set(Number(0));
     // Do some cleanup
     srcdsChild.removeAllListeners();
@@ -785,6 +836,27 @@ function updateValidate(appid, validate) {
         `+app_update ${appid}`,
         `+quit`,
       ];
+    }
+
+    if (discord) {
+      discord
+        .setPayload({
+          username: 'Honkhost Alerting',
+          embeds: [
+            {
+              title: shortname,
+              description: 'Checking for update',
+              timestamp: new Date(),
+            },
+          ],
+        })
+        .fire()
+        .then(() => {
+          return;
+        })
+        .catch((error) => {
+          clog.error(error);
+        });
     }
 
     // Spawn steamcmd
