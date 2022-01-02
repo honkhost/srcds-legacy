@@ -24,6 +24,7 @@
     "ee-log": "github:epers/ee-log",
     "express": "^4.17.1",
     "express-session": "^1.17.2",
+    "hookcord": "^2.0.2",
     "keycloak-connect": "^16.1.0",
     "node-pty": "^0.10.1",
     "pidusage": "^3.0.0",
