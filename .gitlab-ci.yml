@@ -11,6 +11,8 @@
 # for the default branch and all other (MR) branches.
 
 docker-build:
+  tags:
+    - amd64
   # Use the official docker image.
   image: docker:latest
   stage: build
