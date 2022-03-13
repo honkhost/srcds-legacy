@@ -24,7 +24,8 @@ import { default as Keycloak } from 'keycloak-connect';
 import { default as why } from 'why-is-node-running';
 import { default as Hookcord } from 'hookcord';
 
-console.log(`
+// Very important
+const logo = `
  _                    _     _                  _                    
 | |                  | |   | |                | |                   
 | |__    ___   _ __  | | __| |__    ___   ___ | |_      __ _   __ _ 
@@ -33,7 +34,7 @@ console.log(`
 |_| |_| \\___/ |_| |_||_|\\_\\|_| |_| \\___/ |___/ \\__|(_) \\__, | \\__, |
                                                         __/ |  __/ |
                                                        |___/  |___/ 
-`);
+`;
 
 //
 // Globals
@@ -103,6 +104,14 @@ const updateRequiredString = 'MasterRequestRestart\r\nYour server needs to be r
 
 //
 // End globals
+
+// Very important
+srcds2wsPipe.push(logo);
+console.log(logo);
+
+console.log(`\n\n--- Logs begin at ${timestamp()} ---\n\n`);
+console.error(`\n\n--- Logs begin at ${timestamp()} ---\n\n`);
+srcds2wsPipe.push(`\n\n--- Logs begin at ${timestamp()} ---\n\n`);
 
 //
 // EventEmitters
