@@ -1,20 +1,47 @@
 # syntax=docker/dockerfile:1
 
-FROM registry.honkhost.gg/honkhost/steamcmd:latest
-LABEL maintainer="epers@honkhost.gg"
+FROM debian:bullseye-slim
+LABEL maintainer="pers.edwin@honkhost.gg"
 
 USER root
 
+RUN set -exu \
+  && dpkg --add-architecture i386 \
+  && sed -i 's/main/main contrib non-free/g' /etc/apt/sources.list \
+  && apt-get -yq update \
+  && apt-get -yq dist-upgrade \
+  && apt-get -yq install --no-install-recommends \
+    curl \
+    tar \
+    lib32stdc++6 \
+    lib32gcc-s1 \
+    lib32z1 \
+    gcc \
+    g++ \
+    make \
+    ca-certificates \
+    libcurl4:i386 \
+  && curl -fsSL https://deb.nodesource.com/setup_16.x | bash - \
+  && apt-get -yq install nodejs \
+  && apt-get clean && apt-get autoclean \
+  && adduser --disabled-password --gecos container --home /home/container container \
+  && mkdir -p /opt/steamcmd \
+  && curl "http://media.steampowered.com/installer/steamcmd_linux.tar.gz" | tar xvzf - -C "/opt/steamcmd" \
+  && chown container:container /opt/steamcmd
+
 ENV NODE_ENV=production
+
 COPY ./src /dist
 COPY ./package.json /dist/package.json
 COPY ./package-lock.json /dist/package-lock.json
-
-RUN set -exu \
-  && cd /dist \
-  && npm install --production
+RUN set -exu && cd /dist && npm install --production
 
 USER container
+
+RUN set -exu \
+  && cd /home/container \
+  && /opt/steamcmd/steamcmd.sh +quit
+
 ENV USER=container \
   HOME="/home/container" \
   NODE_ENV=production \
@@ -22,7 +49,6 @@ ENV USER=container \
   SRCDS_AUTOUPDATE="true" \
   SRCDS_HTTP_PROXY="" \
   SRCDS_FORCE_VALIDATE="" \
-  SRCDS_WS_STATIC_TOKEN="" \
   SRCDS_PORT="27015" \
   SRCDS_TICKRATE="64" \
   SRCDS_MAXPLAYERS="20" \
@@ -40,4 +66,4 @@ ENV USER=container \
   SRCDS_DEBUG_FAKE_STALE=""
 
 WORKDIR /dist
-ENTRYPOINT ["node", "--trace-warnings", "main.mjs"]
+ENTRYPOINT ["node", "main.mjs"]
