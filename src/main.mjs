@@ -40,7 +40,7 @@ const logo = `
 // Globals
 
 // Loud but useful
-const debug = process.env.DEBUG || true;
+const debug = parseBool(process.env.DEBUG) || true;
 
 // Our identity - bail out really early if it isn't defined
 const ident = process.env.SRCDS_IDENT || '';
