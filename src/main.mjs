@@ -1,8 +1,5 @@
 'use strict';
 
-console.log(`\n\n--- Logs begin at ${timestamp()} ---\n\n`);
-console.error(`\n\n--- Logs begin at ${timestamp()} ---\n\n`);
-
 // Imports
 // Built-ins
 import { default as path } from 'path';
@@ -15,8 +12,6 @@ import { default as fs } from 'fs';
 import { default as clog } from 'ee-log';
 import { default as pty } from 'node-pty';
 import { default as express } from 'express';
-// Dunno why eslint hates this lib...
-// eslint-disable-next-line node/no-missing-import
 import { tinyws } from 'tinyws';
 import { default as prometheus } from 'prom-client';
 import { default as pidusage } from 'pidusage';
@@ -106,12 +101,13 @@ const updateRequiredString = 'MasterRequestRestart\r\nYour server needs to be r
 // End globals
 
 // Very important
+srcds2wsPipe.push(`--- Logs begin at ${timestamp()} ---`);
+console.log(`\n\n--- Logs begin at ${timestamp()} ---\n\n`);
+console.error(`\n\n--- Logs begin at ${timestamp()} ---\n\n`);
+
 srcds2wsPipe.push(logo);
 console.log(logo);
 
-console.log(`\n\n--- Logs begin at ${timestamp()} ---\n\n`);
-console.error(`\n\n--- Logs begin at ${timestamp()} ---\n\n`);
-srcds2wsPipe.push(`\n\n--- Logs begin at ${timestamp()} ---\n\n`);
 
 //
 // EventEmitters
@@ -161,13 +157,13 @@ if (srcdsConfig.gamePassword === '' && srcdsConfig.allowEmptyGamePassword) {
 const srcdsCommandLine = [
   '-usercon', // Enable rcon
   '-norestart', // We handle restarts ourselves
+  '-strictportbind',
   '-ip',
   srcdsConfig.ip, // Bind ip
   '-port',
   srcdsConfig.port, // Bind port
   '-game',
   srcdsConfig.game, // Mod name
-  '-nohltv', // Disable HLTV
   '-tickrate',
   srcdsConfig.tickrate, // Tickrate
   '-maxplayers_override',
@@ -190,7 +186,8 @@ const srcdsCommandLine = [
   srcdsConfig.gamePassword, // Game password
   '+hostname',
   ident, // Set the hostname at startup - can be overridden by config files later
-  // '+sv_downloadurl', srcdsConfig.fastDLUrl, // FastDL url
+  '+tv_port',
+  srcdsConfig.hltvPort,
 ];
 
 // Some debug statements
@@ -326,7 +323,7 @@ expressApp.set('trust proxy', true);
 
 expressApp.use(keycloak.middleware());
 
-expressApp.use('/v1/metrics', (request, response, next) => {
+expressApp.use(/\/((?!metrics|healthcheck).)*/, (request, response, next) => {
   const token = request.headers['authorization'];
   // Do some auth
   try {
@@ -347,6 +344,10 @@ const expressServer = expressApp.listen(3000);
 expressApp.get('/v1/metrics', async (request, response) => {
   const toSend = await prometheusRegistry.metrics();
   response.send(toSend);
+});
+
+expressApp.get('/v1/wrappermetrics', async (request, response) => {
+  response.send(process.memoryUsage());
 });
 
 expressApp.get('/v1/healthcheck', (request, response) => {
@@ -847,10 +848,12 @@ function updateValidate(appid, validate) {
       ];
     }
 
+    // Spawn steamcmd
+    console.log(`[${timestamp()}]  Spawning steamcmd to update/validate`);
     if (discord) {
       discord
         .setPayload({
-          username: 'Honkhost Alerting',
+          username: `${srcdsConfig.hostname} Alerting`,
           embeds: [
             {
               title: shortname,
@@ -867,9 +870,6 @@ function updateValidate(appid, validate) {
           clog.error(error);
         });
     }
-
-    // Spawn steamcmd
-    console.log(`[${timestamp()}]  Spawning steamcmd to update/validate`);
     const steamcmdChild = pty.spawn(`${steamcmdDir}/steamcmd.sh`, steamcmdCommandLine, {
       handleFlowControl: true,
       cwd: steamcmdDir,
