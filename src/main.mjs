@@ -12,6 +12,7 @@ import { default as fs } from 'fs';
 import { default as clog } from 'ee-log';
 import { default as pty } from 'node-pty';
 import { default as express } from 'express';
+// eslint-disable-next-line node/no-missing-import
 import { tinyws } from 'tinyws';
 import { default as prometheus } from 'prom-client';
 import { default as pidusage } from 'pidusage';
@@ -108,7 +109,6 @@ console.error(`\n\n--- Logs begin at ${timestamp()} ---\n\n`);
 srcds2wsPipe.push(logo);
 console.log(logo);
 
-
 //
 // EventEmitters
 // TODO there has to be a better way
@@ -119,7 +119,9 @@ const statsEventRx = new events.EventEmitter();
 const srcdsConfig = {
   appid: '740', // Steam game ID
   ip: '0.0.0.0', // Bind address
-  port: process.env.SRCDS_PORT || '27215', // Game port
+  hostname: process.env.SRCDS_HOSTNAME || ident,
+  port: process.env.SRCDS_PORT || '27015', // Game port
+  hltvPort: process.env.SRCDS_TV_PORT || '27020', // HLTV port
   tickrate: process.env.SRCDS_TICKRATE || '64', // Tickrate
   maxPlayers: process.env.SRCDS_MAXPLAYERS || '20', // Maximum number of players
   startupMap: process.env.SRCDS_STARTUPMAP || 'de_nuke', // Startup map
@@ -170,8 +172,6 @@ const srcdsCommandLine = [
   srcdsConfig.maxPlayers, // Maxplayers
   '-authkey',
   srcdsConfig.wsapikey, // Workshop api key
-  '+map',
-  srcdsConfig.startupMap, // Startup map
   '+servercfgfile',
   srcdsConfig.serverCfgFile, // Main server configuration file
   '+game_type',
@@ -185,9 +185,11 @@ const srcdsCommandLine = [
   '+sv_password',
   srcdsConfig.gamePassword, // Game password
   '+hostname',
-  ident, // Set the hostname at startup - can be overridden by config files later
+  `${srcdsConfig.hostname}`, // Set the hostname at startup - can be overridden by config files later
   '+tv_port',
   srcdsConfig.hltvPort,
+  '+map',
+  srcdsConfig.startupMap, // Startup map
 ];
 
 // Some debug statements
@@ -939,8 +941,10 @@ function parseBool(string) {
       case 'false':
       case 'no':
       case '0':
+      case '':
       case null:
         return false;
+
       default:
         return Boolean(string);
     }
