@@ -119,7 +119,7 @@ const statsEventRx = new events.EventEmitter();
 //
 // SRCDS config
 const srcdsConfig = {
-  appid: '740', // Steam game ID
+  appid: process.env.SRCDS_GAMEID || '740', // Steam game ID
   ip: '0.0.0.0', // Bind address
   hostname: process.env.SRCDS_HOSTNAME || ident,
   port: process.env.SRCDS_PORT || '27015', // Game port
