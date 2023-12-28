@@ -119,6 +119,8 @@ const statsEventRx = new events.EventEmitter();
 //
 // SRCDS config
 const srcdsConfig = {
+  srcdsBin: process.env.SRCDS_BIN || 'srcds_linux',
+  cs2: parseBool(process.env.SRCDS_CS2) || false,
   appid: process.env.SRCDS_GAMEID || '740', // Steam game ID
   ip: '0.0.0.0', // Bind address
   hostname: process.env.SRCDS_HOSTNAME || ident,
@@ -159,6 +161,7 @@ if (srcdsConfig.gamePassword === '' && srcdsConfig.allowEmptyGamePassword) {
 
 // Build the srcds command line
 const srcdsCommandLine = [
+  srcdsConfig.cs2 ? '-dedicated' : '',
   '-usercon', // Enable rcon
   '-norestart', // We handle restarts ourselves
   '-strictportbind',
@@ -486,8 +489,8 @@ function spawnSrcds() {
 
   // if (debug) clog.debug(`Spawning srcds at ${serverFilesDir}/srcds_linux with options`, srcdsCommandLine);
 
-  console.log(`[${timestamp()}]  Spawning srcds at ${serverFilesDir}/srcds_linux:`);
-  srcdsChild = pty.spawn(`${serverFilesDir}/srcds_linux`, srcdsCommandLine, {
+  console.log(`[${timestamp()}]  Spawning srcds at ${serverFilesDir}/${srcdsConfig.srcdsBin}:`);
+  srcdsChild = pty.spawn(path.resolve(`${serverFilesDir}/${srcdsConfig.srcdsBin}`), srcdsCommandLine, {
     handleFlowControl: true,
     cwd: serverFilesDir,
     env: {
