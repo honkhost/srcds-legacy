@@ -494,7 +494,7 @@ function spawnSrcds() {
     handleFlowControl: true,
     cwd: serverFilesDir,
     env: {
-      LD_LIBRARY_PATH: `${serverFilesDir}:${serverFilesDir}/bin`,
+      LD_LIBRARY_PATH: `${steamcmdDir}/linux32:${steamcmdDir}/linux64:${serverFilesDir}:${serverFilesDir}/bin:${serverFilesDir}/game/bin/linuxsteamrt64`,
       PATH: `${steamcmdDir}:${serverFilesDir}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`,
       HOME: homeDir,
       SRCDS_DIR: serverFilesDir,
