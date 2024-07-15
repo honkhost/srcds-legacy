@@ -121,6 +121,7 @@ const statsEventRx = new events.EventEmitter();
 const srcdsConfig = {
   srcdsBin: process.env.SRCDS_BIN || 'srcds_linux',
   cs2: parseBool(process.env.SRCDS_CS2) || false,
+  cs2_autoexec: parseBool(process.env.SRCDS_CS2_AUTOEXEC) || false,
   appid: process.env.SRCDS_GAMEID || '740', // Steam game ID
   ip: '0.0.0.0', // Bind address
   hostname: process.env.SRCDS_HOSTNAME || ident,
@@ -195,6 +196,7 @@ const srcdsCommandLine = [
   srcdsConfig.hltvPort,
   '+map',
   srcdsConfig.startupMap, // Startup map
+  srcdsConfig.cs2_autoexec ? '+exec autoexec.cfg': '',
 ];
 
 // Some debug statements
