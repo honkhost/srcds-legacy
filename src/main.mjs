@@ -158,6 +158,7 @@ if (srcdsConfig.gamePassword === '' && srcdsConfig.allowEmptyGamePassword) {
 const srcdsCommandLine = [
   '-norestart', // We handle restarts ourselves
   '-strictportbind',
+  '-insecure', // valve hates csgo now ;_;
   '-ip',
   srcdsConfig.ip, // Bind ip
   '-port',
