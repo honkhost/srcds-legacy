@@ -524,7 +524,7 @@ function spawnSrcds() {
 
   process.stdin.on('data', (data) => {
     data = data.toString();
-    ws2srcdsPipe.write(data);
+    srcdsChild.write(data);
   });
 
   expressApp.post('/v1/restart', (request, response) => {
