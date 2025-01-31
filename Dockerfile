@@ -21,6 +21,7 @@ RUN set -exu \
     make \
     ca-certificates \
     libcurl4:i386 \
+    python3 \
   && curl -fsSL https://deb.nodesource.com/setup_16.x | bash - \
   && apt-get -yq install nodejs \
   && apt-get clean && apt-get autoclean \
