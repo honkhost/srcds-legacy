@@ -55,9 +55,6 @@ const serverFilesDir = '/opt/serverfiles';
 // Do we auto update?
 const autoUpdate = process.env.SRCDS_AUTOUPDATE || 'true';
 
-// Steamcmd proxy
-const httpProxy = process.env.SRCDS_HTTP_PROXY || '';
-
 // Force a validation of game files when starting/updating
 const startupValidate = parseBool(process.env.SRCDS_STARTUP_VALIDATE) || false;
 
@@ -159,7 +156,6 @@ if (srcdsConfig.gamePassword === '' && srcdsConfig.allowEmptyGamePassword) {
 
 // Build the srcds command line
 const srcdsCommandLine = [
-  '-usercon', // Enable rcon
   '-norestart', // We handle restarts ourselves
   '-strictportbind',
   '-ip',
@@ -182,8 +178,6 @@ const srcdsCommandLine = [
   srcdsConfig.gameMode, // Game mode
   '+sv_setsteamaccount',
   srcdsConfig.gslt, // GSLT
-  '+rcon_password',
-  srcdsConfig.rconPassword, // RCON password
   '+sv_password',
   srcdsConfig.gamePassword, // Game password
   '+hostname',
@@ -496,7 +490,6 @@ function spawnSrcds() {
       HOME: homeDir,
       SRCDS_DIR: serverFilesDir,
       PWD: serverFilesDir,
-      http_proxy: httpProxy,
     },
   });
 
@@ -527,6 +520,13 @@ function spawnSrcds() {
     data = data.toString();
 
     console.log(`[${timestamp()}]  [websocket console] ${data}`);
+    srcdsChild.write(data);
+  });
+
+  process.stdin.on('data', (data) => {
+    data = data.toString();
+
+    console.log(`[${timestamp()}]  [tty console] ${data}`);
     srcdsChild.write(data);
   });
 
@@ -871,7 +871,6 @@ function updateValidate(appid, validate) {
       cwd: steamcmdDir,
       env: {
         LD_LIBRARY_PATH: `${steamcmdDir}/linux32`,
-        http_proxy: httpProxy,
       },
     });
 
