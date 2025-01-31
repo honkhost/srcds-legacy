@@ -158,7 +158,6 @@ if (srcdsConfig.gamePassword === '' && srcdsConfig.allowEmptyGamePassword) {
 const srcdsCommandLine = [
   '-norestart', // We handle restarts ourselves
   '-strictportbind',
-  '-insecure', // valve hates csgo now ;_;
   '-ip',
   srcdsConfig.ip, // Bind ip
   '-port',
@@ -519,16 +518,13 @@ function spawnSrcds() {
 
   ws2srcdsPipe.on('data', (data) => {
     data = data.toString();
-
-    console.log(`[${timestamp()}]  [websocket console] ${data}`);
+    console.log(`[${timestamp()}]  [web console] ${data}`);
     srcdsChild.write(data);
   });
 
   process.stdin.on('data', (data) => {
     data = data.toString();
-
-    console.log(`[${timestamp()}]  [tty console] ${data}`);
-    srcdsChild.write(data);
+    ws2srcdsPipe.write(data);
   });
 
   expressApp.post('/v1/restart', (request, response) => {
