@@ -489,14 +489,7 @@ function spawnSrcds() {
   var env = {};
 
   if (srcdsConfig.httpProxy) {
-    env = {
-      LD_LIBRARY_PATH: `${steamcmdDir}/linux32:${steamcmdDir}/linux64:${serverFilesDir}:${serverFilesDir}/bin:${serverFilesDir}/game/bin/linuxsteamrt64`,
-      PATH: `${steamcmdDir}:${serverFilesDir}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`,
-      HOME: homeDir,
-      SRCDS_DIR: serverFilesDir,
-      PWD: serverFilesDir,
-    }
-  } else {
+    clog.debug(`Using HTTP_PROXY at ${srcdsConfig.httpProxy}`)
     env = {
       LD_LIBRARY_PATH: `${steamcmdDir}/linux32:${steamcmdDir}/linux64:${serverFilesDir}:${serverFilesDir}/bin:${serverFilesDir}/game/bin/linuxsteamrt64`,
       PATH: `${steamcmdDir}:${serverFilesDir}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`,
@@ -505,6 +498,14 @@ function spawnSrcds() {
       PWD: serverFilesDir,
       HTTP_PROXY: srcdsConfig.httpProxy,
       HTTPS_PROXY: srcdsConfig.httpProxy,
+    }
+  } else {
+    env = {
+      LD_LIBRARY_PATH: `${steamcmdDir}/linux32:${steamcmdDir}/linux64:${serverFilesDir}:${serverFilesDir}/bin:${serverFilesDir}/game/bin/linuxsteamrt64`,
+      PATH: `${steamcmdDir}:${serverFilesDir}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`,
+      HOME: homeDir,
+      SRCDS_DIR: serverFilesDir,
+      PWD: serverFilesDir,
     }
   }
 
