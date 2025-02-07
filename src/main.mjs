@@ -119,6 +119,7 @@ const srcdsConfig = {
   srcdsBin: process.env.SRCDS_BIN || 'srcds_linux',
   cs2: parseBool(process.env.SRCDS_CS2) || false,
   cs2_autoexec: parseBool(process.env.SRCDS_CS2_AUTOEXEC) || false,
+  httpProxy: process.env.SRCDS_HTTP_PROXY || false,
   appid: process.env.SRCDS_GAMEID || '740', // Steam game ID
   ip: '0.0.0.0', // Bind address
   hostname: process.env.SRCDS_HOSTNAME || ident,
@@ -483,19 +484,35 @@ function spawnSrcds() {
   // Spawn srcds
   metrics.uptime.set(Number(0));
 
-  // if (debug) clog.debug(`Spawning srcds at ${serverFilesDir}/srcds_linux with options`, srcdsCommandLine);
+  if (debug) clog.debug(`Spawning srcds at ${serverFilesDir}/${srcdsConfig.srcdsBin} with options`, srcdsCommandLine);
 
-  console.log(`[${timestamp()}]  Spawning srcds at ${serverFilesDir}/${srcdsConfig.srcdsBin}:`);
-  srcdsChild = pty.spawn(path.resolve(`${serverFilesDir}/${srcdsConfig.srcdsBin}`), srcdsCommandLine, {
-    handleFlowControl: true,
-    cwd: serverFilesDir,
-    env: {
+  var env = {};
+
+  if (srcdsConfig.httpProxy) {
+    env = {
       LD_LIBRARY_PATH: `${steamcmdDir}/linux32:${steamcmdDir}/linux64:${serverFilesDir}:${serverFilesDir}/bin:${serverFilesDir}/game/bin/linuxsteamrt64`,
       PATH: `${steamcmdDir}:${serverFilesDir}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`,
       HOME: homeDir,
       SRCDS_DIR: serverFilesDir,
       PWD: serverFilesDir,
-    },
+    }
+  } else {
+    env = {
+      LD_LIBRARY_PATH: `${steamcmdDir}/linux32:${steamcmdDir}/linux64:${serverFilesDir}:${serverFilesDir}/bin:${serverFilesDir}/game/bin/linuxsteamrt64`,
+      PATH: `${steamcmdDir}:${serverFilesDir}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`,
+      HOME: homeDir,
+      SRCDS_DIR: serverFilesDir,
+      PWD: serverFilesDir,
+      HTTP_PROXY: srcdsConfig.httpProxy,
+      HTTPS_PROXY: srcdsConfig.httpProxy,
+    }
+  }
+
+  console.log(`[${timestamp()}]  Spawning srcds at ${serverFilesDir}/${srcdsConfig.srcdsBin}:`);
+  srcdsChild = pty.spawn(path.resolve(`${serverFilesDir}/${srcdsConfig.srcdsBin}`), srcdsCommandLine, {
+    handleFlowControl: true,
+    cwd: serverFilesDir,
+    env: env,
   });
 
   metrics.status.set(Number(1));
