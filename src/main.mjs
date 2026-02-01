@@ -323,7 +323,7 @@ expressApp.use('/v1/metrics', (request, response, next) => {
 });
 
 // We declare this as a var here so we can shutdown the connection when srcds exits
-const expressServer = expressApp.listen(3000);
+const expressServer = expressApp.listen(3000, 'localhost');
 
 expressApp.get('/v1/metrics', async (request, response) => {
   const toSend = await prometheusRegistry.metrics();
