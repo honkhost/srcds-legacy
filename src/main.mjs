@@ -120,7 +120,7 @@ const srcdsConfig = {
   cs2: parseBool(process.env.SRCDS_CS2) || false,
   cs2_autoexec: parseBool(process.env.SRCDS_CS2_AUTOEXEC) || false,
   httpProxy: process.env.SRCDS_HTTP_PROXY || false,
-  appid: process.env.SRCDS_GAMEID || '740', // Steam game ID
+  appid: process.env.SRCDS_GAMEID || '740', // Steam game ID - set to 730 for cs2
   ip: '0.0.0.0', // Bind address
   hostname: process.env.SRCDS_HOSTNAME || ident,
   port: process.env.SRCDS_PORT || '27015', // Game port
@@ -139,6 +139,7 @@ const srcdsConfig = {
   allowEmptyGamePassword: parseBool(process.env.SRCDS_PUBLIC) || false, // Allow empty game password?
   fastDLUrl: process.env.SRCDS_FASTDL_URL || '', // FastDL server
   fakeStale: parseBool(process.env.SRCDS_DEBUG_FAKE_STALE) || false,
+  workshopCollection: process.env.SRCDS_WORKSHOP_COLLECTION || '',
 };
 
 // If no rcon password was supplied, set one now (can be changed later in cfg files)
@@ -191,7 +192,8 @@ const srcdsCommandLine = [
   srcdsConfig.hltvPort,
   '+map',
   srcdsConfig.startupMap, // Startup map
-  srcdsConfig.cs2_autoexec ? '+exec autoexec.cfg': '',
+  srcdsConfig.workshopCollection != '' ? `+host_workshop_collection ${srcdsConfig.workshopCollection}` : '',
+  srcdsConfig.cs2_autoexec ? '+exec autoexec.cfg' : '',
 ];
 
 // Some debug statements
