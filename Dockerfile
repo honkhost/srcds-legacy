@@ -24,7 +24,7 @@ RUN set -exu \
     libicu-dev \
     python3 \
     python3-setuptools \
-  && curl -fsSL https://deb.nodesource.com/setup_16.x | bash - \
+  && curl -fsSL https://deb.nodesource.com/setup_26.x | bash - \
   && apt-get -yq install nodejs \
   && apt-get clean && apt-get autoclean \
   && addgroup --gid 1000 server \
