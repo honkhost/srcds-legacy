@@ -1,13 +1,12 @@
 # syntax=docker/dockerfile:1
+# check=skip=SecretsUsedInArgOrEnv
 
-FROM debian:bullseye-slim
-LABEL maintainer="pers.edwin@honkhost.gg"
+FROM ghcr.io/steamcmd/steamcmd:debian-trixie
+LABEL maintainer="pers.edwin@gmail.com"
 
 USER root
 
 RUN set -exu \
-  && dpkg --add-architecture i386 \
-  && sed -i 's/main/main contrib non-free/g' /etc/apt/sources.list \
   && apt-get -yq update \
   && apt-get -yq dist-upgrade \
   && apt-get -yq install --no-install-recommends \
@@ -21,32 +20,27 @@ RUN set -exu \
     make \
     ca-certificates \
     libcurl4:i386 \
-    libicu67 \
+    libicu* \
     libicu-dev \
     python3 \
+    python3-setuptools \
   && curl -fsSL https://deb.nodesource.com/setup_16.x | bash - \
   && apt-get -yq install nodejs \
   && apt-get clean && apt-get autoclean \
-  && adduser --disabled-password --gecos container --home /home/container container \
-  && mkdir -p /opt/steamcmd \
-  && curl "http://media.steampowered.com/installer/steamcmd_linux.tar.gz" | tar xvzf - -C "/opt/steamcmd" \
-  && chown container:container /opt/steamcmd
+  && addgroup --gid 1000 server \
+  && adduser --uid 1000 --gid 1000 --disabled-password --gecos server --home /home/server server
 
 ENV NODE_ENV=production
 
 COPY ./src /dist
 COPY ./package.json /dist/package.json
 COPY ./package-lock.json /dist/package-lock.json
-RUN set -exu && cd /dist && npm install --production
+RUN set -exu && cd /dist && npm install --omit=dev
 
-USER container
+USER server
 
-RUN set -exu \
-  && cd /home/container \
-  && /opt/steamcmd/steamcmd.sh +quit
-
-ENV USER=container \
-  HOME="/home/container" \
+ENV USER=server \
+  HOME="/home/server" \
   NODE_ENV=production \
   DEBUG="true" \
   SRCDS_AUTOUPDATE="true" \
