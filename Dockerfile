@@ -7,6 +7,7 @@ LABEL maintainer="pers.edwin@gmail.com"
 USER root
 
 RUN set -exu \
+  && dpkg --add-architecture i386 \
   && apt-get -yq update \
   && apt-get -yq dist-upgrade \
   && apt-get -yq install --no-install-recommends \

@@ -136,6 +136,9 @@ const srcdsConfig = {
   fastDLUrl: process.env.SRCDS_FASTDL_URL || '', // FastDL server
   fakeStale: parseBool(process.env.SRCDS_DEBUG_FAKE_STALE) || false,
   skipSteamCmd: parseBool(process.env.SRCDS_SKIP_STEAMCMD) || false, // Skip running steamcmd to update/validate at startup
+  ldPreload: process.env.SRCDS_LD_PRELOAD || '', // add to LD_PRELOAD envvar
+  ldLibrary: process.env.SRCDS_LD_LIBRARY || '', // add to LD_LIBRARY envvar
+  srcdsBin: process.env.SRCDS_GAME_BIN || 'srcds_linux', // add to LD_LIBRARY envvar
 };
 
 // If no rcon password was supplied, set one now (can be changed later in cfg files)
@@ -484,14 +487,15 @@ function spawnSrcds() {
   // Spawn srcds
   metrics.uptime.set(Number(0));
 
-  // if (debug) clog.debug(`Spawning srcds at ${serverFilesDir}/srcds_linux with options`, srcdsCommandLine);
+  // if (debug) clog.debug(`Spawning srcds at ${serverFilesDir}/${srcdsConfig.srcdsBin} with options`, srcdsCommandLine);
 
-  console.log(`[${timestamp()}]  Spawning srcds at ${serverFilesDir}/srcds_linux:`);
-  srcdsChild = pty.spawn(`${serverFilesDir}/srcds_linux`, srcdsCommandLine, {
+  console.log(`[${timestamp()}]  Spawning srcds at ${serverFilesDir}/${srcdsConfig.srcdsBin}:`);
+  srcdsChild = pty.spawn(`${serverFilesDir}/${srcdsConfig.srcdsBin}`, srcdsCommandLine, {
     handleFlowControl: true,
     cwd: serverFilesDir,
     env: {
-      LD_LIBRARY_PATH: `${serverFilesDir}:${serverFilesDir}/bin`,
+      LD_LIBRARY_PATH: `${srcdsConfig.ldLibrary}:${serverFilesDir}:${serverFilesDir}/bin:${process.env.LD_LIBRARY}`,
+      LD_PRELOAD: `${srcdsConfig.ldPreload}`,
       PATH: `${steamcmdDir}:${serverFilesDir}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`,
       HOME: homeDir,
       SRCDS_DIR: serverFilesDir,
