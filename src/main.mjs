@@ -135,6 +135,7 @@ const srcdsConfig = {
   allowEmptyGamePassword: parseBool(process.env.SRCDS_PUBLIC) || false, // Allow empty game password?
   fastDLUrl: process.env.SRCDS_FASTDL_URL || '', // FastDL server
   fakeStale: parseBool(process.env.SRCDS_DEBUG_FAKE_STALE) || false,
+  skipSteamCmd: parseBool(process.env.SRCDS_SKIP_STEAMCMD) || false, // Skip running steamcmd to update/validate at startup
 };
 
 // If no rcon password was supplied, set one now (can be changed later in cfg files)
@@ -405,7 +406,8 @@ expressApp.use('/v1/ws', tinyws(), async (request, response) => {
 // Begin logic
 // First, check for updates
 metrics.status.set(Number(0));
-updateValidate(srcdsConfig.appid, startupValidate)
+if (!srcdsConfig.skipSteamCmd) {
+  updateValidate(srcdsConfig.appid, startupValidate)
   .then((result) => {
     // If steamcmd didn't shit the bed, continue
     if (result != 'error') {
@@ -426,6 +428,10 @@ updateValidate(srcdsConfig.appid, startupValidate)
     // If checkApplyUpdate throws, bail the fuck out
     clog.error(error);
   });
+} else {
+  checkCreateAutoExec();
+  spawnSrcds();
+}
 
 // For debugging
 process.on('SIGTERM', () => {
