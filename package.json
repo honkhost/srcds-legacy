@@ -1,15 +1,14 @@
 {
   "name": "csgo",
-  "version": "0.0.1",
+  "version": "1.3.0",
   "description": "runs csgo",
   "private": true,
   "scripts": {
     "test": "node_modules/.bin/eslint --ignore-path .gitignore .",
-    "build": "./build.sh"
   },
   "repository": {
     "type": "git",
-    "url": "https://git.honkhost.gg/honkhost/srcds/csgo.git"
+    "url": "https://github.com/honkhost/srcds-legacy.git"
   },
   "keywords": [
     "srcds"
@@ -17,15 +16,15 @@
   "author": "Edwin Pers",
   "license": "SEE LICENSE IN LICENSE",
   "bugs": {
-    "url": "https://git.honkhost.gg/honkhost/srcds/csgo/-/issues"
+    "url": "https://github.com/honkhost/srcds-legacy"
   },
-  "homepage": "https://git.honkhost.gg/honkhost/srcds/csgo",
+  "homepage": "https://github.com/honkhost/srcds-legacy",
   "dependencies": {
     "ee-log": "github:epers/ee-log",
     "express": "^4.17.1",
     "express-session": "^1.17.2",
     "hookcord": "^2.0.2",
-    "keycloak-connect": "^16.1.0",
+    "keycloak-connect": "^3.3.0",
     "node-pty": "^0.10.1",
     "pidusage": "^3.0.0",
     "prom-client": "^14.0.1",
@@ -38,14 +37,14 @@
     "@babel/plugin-syntax-top-level-await": "^7.14.5",
     "@rollup/plugin-commonjs": "^19.0.0",
     "@rollup/plugin-json": "^4.1.0",
-    "@rollup/plugin-node-resolve": "^13.0.0",
+    "@rollup/plugin-node-resolve": "^7.1.3",
     "eslint": "^7.28.0",
     "eslint-config-prettier": "^8.3.0",
     "eslint-plugin-node": "^11.1.0",
     "eslint-plugin-prettier": "^3.4.0",
     "eslint-plugin-promise": "^5.1.0",
     "eslint-plugin-security": "^1.4.0",
-    "node-gyp": "^8.1.0",
+    "node-gyp": "^13.1.0",
     "prettier": "^2.3.1",
     "rollup": "^2.52.3",
     "rollup-plugin-auto-external": "^2.0.0",
@@ -55,5 +54,9 @@
   "engines": {
     "node": ">=16"
   },
-  "type": "module"
+  "type": "module",
+  "allowScripts": {
+    "node-pty@0.10.1": true,
+    "chromedriver@157.0.2": true
+  }
 }
